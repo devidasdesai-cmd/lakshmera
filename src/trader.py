@@ -30,10 +30,27 @@ def run_cycle():
             print(f"Daily loss limit of ${DAILY_LOSS_LIMIT_USD} reached. Shutting down.")
             return
 
-    # Fetch all open markets from Kalshi
+    # Fetch only markets closing within our horizon window
     print("Fetching open markets from Kalshi...")
     all_markets = client.get_all_open_markets()
-    print(f"Total open markets: {len(all_markets)}")
+    print(f"Total open markets fetched: {len(all_markets)}")
+
+    # Print 10 sample markets so we can see Kalshi's actual format
+    print("\n--- SAMPLE MARKETS (first 10) ---")
+    for m in all_markets[:10]:
+        print(f"  ticker={m.get('ticker')} | title={m.get('title')} | subtitle={m.get('subtitle')}")
+    print("--- END SAMPLE ---\n")
+
+    # Also print any market whose ticker or title contains weather keywords
+    keywords = ["temp", "weather", "rain", "snow", "wind", "high", "low", "precip", "storm", "KDFW", "KORD", "KJFK"]
+    weather_samples = [
+        m for m in all_markets
+        if any(k.lower() in (m.get("ticker", "") + m.get("title", "")).lower() for k in keywords)
+    ]
+    print(f"--- WEATHER-RELATED MARKETS ({len(weather_samples)} found) ---")
+    for m in weather_samples[:20]:
+        print(f"  ticker={m.get('ticker')} | title={m.get('title')} | close={m.get('close_time')}")
+    print("--- END WEATHER ---\n")
 
     # Filter to temperature markets resolving within our horizon
     horizon_cutoff = date.today() + timedelta(days=FORECAST_HORIZON_DAYS)
