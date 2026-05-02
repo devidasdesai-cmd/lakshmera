@@ -7,6 +7,7 @@ from config import (
     MAX_TRADE_SIZE_USD,
     DAILY_LOSS_LIMIT_USD,
     MIN_EDGE_THRESHOLD,
+    MAX_EDGE_THRESHOLD,
     FORECAST_HORIZON_DAYS,
     KELLY_CAP,
     TARGET_SERIES,
@@ -123,6 +124,9 @@ def run_cycle():
         if abs(edge) < MIN_EDGE_THRESHOLD:
             action = "NO_BET"
             print(f"  Action: NO_BET (edge {abs(edge):.2f} < {MIN_EDGE_THRESHOLD})\n")
+        elif abs(edge) > MAX_EDGE_THRESHOLD:
+            action = "SUSPICIOUS_EDGE"
+            print(f"  Action: SUSPICIOUS_EDGE (edge {abs(edge):.2f} > {MAX_EDGE_THRESHOLD} — possible GFS bias, skipping)\n")
         elif edge > 0:
             action = "BET_YES"
         else:
@@ -130,7 +134,7 @@ def run_cycle():
 
         log_signal(city["name"], ticker, our_prob, yes_price, edge, action)
 
-        if action == "NO_BET":
+        if action in ("NO_BET", "SUSPICIOUS_EDGE"):
             continue
 
         bet_usd = min(kelly_size(abs(edge), STARTING_CAPITAL, KELLY_CAP), MAX_TRADE_SIZE_USD)
