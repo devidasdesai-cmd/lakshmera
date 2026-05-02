@@ -1,3 +1,4 @@
+from collections import defaultdict
 from datetime import date, timedelta
 
 from config import (
@@ -12,8 +13,19 @@ from config import (
 )
 from kalshi_client import KalshiClient
 from market_parser import parse_market
-from model import estimate_probability, calculate_edge, kelly_size
+from model import calculate_edge, kelly_size
+from weather import get_ensemble_temps, probability_above, probability_below, probability_between
 from database import log_signal, log_trade, get_daily_realized_loss
+
+
+def _estimate(temps, direction, threshold_f, low_f, high_f):
+    if direction == "above":
+        return probability_above(temps, threshold_f)
+    elif direction == "below":
+        return probability_below(temps, threshold_f)
+    elif direction == "bucket" and low_f is not None and high_f is not None:
+        return probability_between(temps, low_f, high_f)
+    return None
 
 
 def run_cycle():
@@ -32,7 +44,6 @@ def run_cycle():
     # Fetch markets for each target weather series
     horizon_cutoff = date.today() + timedelta(days=FORECAST_HORIZON_DAYS)
     raw_markets = []
-
     for series_ticker in TARGET_SERIES:
         data = client.get_events(series_ticker=series_ticker)
         for event in data.get("events", []):
@@ -41,7 +52,6 @@ def run_cycle():
 
     print(f"Weather markets fetched: {len(raw_markets)}")
 
-    # Parse and filter to actionable markets within our horizon
     actionable = []
     for m in raw_markets:
         parsed = parse_market(m)
@@ -52,6 +62,22 @@ def run_cycle():
         actionable.append(parsed)
 
     print(f"Actionable markets within {FORECAST_HORIZON_DAYS}-day horizon: {len(actionable)}\n")
+
+    # Pre-fetch ensemble data once per (city, date) — avoids redundant API calls
+    # and prevents timeouts when many contracts share the same city+date.
+    print("Pre-fetching ensemble forecast data...")
+    ensemble_cache: dict[tuple, list[float]] = {}
+    city_dates = {(m["city"]["name"], m["target_date"]): m["city"] for m in actionable}
+    for (city_name, target_date), city in city_dates.items():
+        temps = get_ensemble_temps(city["lat"], city["lon"], target_date, city["tz"])
+        ensemble_cache[(city_name, target_date)] = temps
+        if temps:
+            mean = sum(temps) / len(temps)
+            print(f"  {city_name} {target_date}: {len(temps)} members | "
+                  f"mean={mean:.1f}°F min={min(temps):.1f}°F max={max(temps):.1f}°F")
+        else:
+            print(f"  {city_name} {target_date}: no data")
+    print()
 
     bets_placed = 0
 
@@ -65,17 +91,25 @@ def run_cycle():
         high_f      = market["high_f"]
         yes_price   = market["yes_price"]
 
-        label = (
-            f"{'>' if direction == 'above' else '<' if direction == 'below' else f'{low_f}-{high_f}'}"
-            f"{threshold_f}°F"
-        )
+        if direction == "above":
+            label = f">{threshold_f}°F"
+        elif direction == "below":
+            label = f"<{threshold_f}°F"
+        else:
+            label = f"{low_f}-{high_f}°F"
+
         print(f"Evaluating: {ticker}")
         print(f"  {city['name']} | {target_date} | high {label}")
         print(f"  Market YES price: {yes_price:.2f}")
 
-        our_prob = estimate_probability(city, target_date, threshold_f, direction, low_f, high_f)
-        if our_prob is None:
+        temps = ensemble_cache.get((city["name"], target_date))
+        if not temps:
             print("  Skipping — no forecast data.\n")
+            continue
+
+        our_prob = _estimate(temps, direction, threshold_f, low_f, high_f)
+        if our_prob is None:
+            print("  Skipping — probability estimate failed.\n")
             continue
 
         edge = calculate_edge(our_prob, yes_price)
