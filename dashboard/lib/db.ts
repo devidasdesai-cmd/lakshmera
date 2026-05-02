@@ -1,5 +1,5 @@
 // Server-only — never import this in client components.
-import { Pool } from 'pg'
+import { Pool, QueryResultRow } from 'pg'
 
 declare global {
   // eslint-disable-next-line no-var
@@ -17,7 +17,7 @@ function getPool(): Pool {
   return global._pgPool
 }
 
-export async function sql<T>(text: string): Promise<T[]> {
+export async function sql<T extends QueryResultRow>(text: string): Promise<T[]> {
   const client = await getPool().connect()
   try {
     const res = await client.query<T>(text)
