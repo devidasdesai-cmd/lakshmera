@@ -1,0 +1,14 @@
+name: Deploy Dashboard
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "dashboard/**"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Vercel deployment
+        run: curl -X POST "${{ secrets.VERCEL_DEPLOY_HOOK }}"
