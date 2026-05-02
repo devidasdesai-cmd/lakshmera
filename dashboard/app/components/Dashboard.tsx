@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import { Trade, Signal, parseTicker, pct, dollars, SERIES_TO_CITY } from '../../lib/utils'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -75,12 +76,19 @@ function ColHeader({ label, tip, sortKey, sort, onSort }: {
   sort:    SortState
   onSort:  (k: string) => void
 }) {
+  const [tipPos, setTipPos] = useState<{ x: number; y: number } | null>(null)
   const active = sort.col === sortKey
+
   return (
     <th className="px-4 py-2 text-left">
       <button
         onClick={() => onSort(sortKey)}
-        className="group relative inline-flex items-center gap-1 cursor-pointer"
+        onMouseEnter={e => {
+          const r = e.currentTarget.getBoundingClientRect()
+          setTipPos({ x: r.left, y: r.bottom + 6 })
+        }}
+        onMouseLeave={() => setTipPos(null)}
+        className="inline-flex items-center gap-1 cursor-pointer"
       >
         <span className={`text-xs font-medium uppercase tracking-wider
           border-b border-dashed transition-colors
@@ -90,12 +98,18 @@ function ColHeader({ label, tip, sortKey, sort, onSort }: {
         <span className="text-xs text-gray-600">
           {active ? (sort.dir === 'asc' ? '↑' : '↓') : '↕'}
         </span>
-        <div className="absolute bottom-full left-0 mb-2 w-56 bg-gray-800 border border-gray-700
-          rounded p-2 text-xs text-gray-300 normal-case tracking-normal font-normal leading-relaxed
-          invisible group-hover:visible z-50 shadow-xl pointer-events-none whitespace-normal text-left">
-          {tip}
-        </div>
       </button>
+
+      {tipPos && createPortal(
+        <div
+          className="fixed z-50 w-56 bg-gray-800 border border-gray-700 rounded-lg p-2.5
+            text-xs text-gray-300 shadow-xl pointer-events-none leading-relaxed"
+          style={{ left: tipPos.x, top: tipPos.y }}
+        >
+          {tip}
+        </div>,
+        document.body
+      )}
     </th>
   )
 }
