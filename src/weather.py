@@ -1,3 +1,4 @@
+import time
 import requests
 from datetime import date
 
@@ -9,7 +10,8 @@ def get_ensemble_temps(lat: float, lon: float, target_date: date, tz: str) -> li
     """
     Fetch GFS ensemble daily max temperatures for a location on a specific date.
     Returns a list of temperatures (one per ensemble member) in Fahrenheit.
-    GFS provides 35 members — enough for reliable probability estimates.
+    Returns an empty list on failure so callers can skip gracefully.
+    Retries up to 2 times with backoff before giving up.
     """
     params = {
         "latitude": lat,
@@ -22,16 +24,27 @@ def get_ensemble_temps(lat: float, lon: float, target_date: date, tz: str) -> li
         "timezone": tz,
     }
 
-    resp = requests.get(ENSEMBLE_URL, params=params, timeout=30)
-    resp.raise_for_status()
-    daily = resp.json().get("daily", {})
-
-    temps = []
-    for key, values in daily.items():
-        if key.startswith("temperature_2m_max") and values and values[0] is not None:
-            temps.append(values[0])
-
-    return temps
+    for attempt in range(3):
+        try:
+            resp = requests.get(ENSEMBLE_URL, params=params, timeout=60)
+            resp.raise_for_status()
+            daily = resp.json().get("daily", {})
+            temps = []
+            for key, values in daily.items():
+                if key.startswith("temperature_2m_max") and values and values[0] is not None:
+                    temps.append(values[0])
+            return temps
+        except requests.exceptions.Timeout:
+            if attempt < 2:
+                wait = 10 * (attempt + 1)
+                print(f"  Open-Meteo timeout (attempt {attempt+1}/3), retrying in {wait}s...")
+                time.sleep(wait)
+            else:
+                print(f"  Open-Meteo timeout after 3 attempts — skipping.")
+                return []
+        except Exception as e:
+            print(f"  Open-Meteo error: {e} — skipping.")
+            return []
 
 
 def probability_above(temps: list[float], threshold_f: float) -> float | None:
