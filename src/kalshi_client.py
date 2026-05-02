@@ -46,7 +46,14 @@ def _auth_headers(method: str, path: str) -> dict:
     full_path = KALSHI_API_PATH_PREFIX + path
     message = (ts + method.upper() + full_path).encode("utf-8")
 
-    signature = _PRIVATE_KEY.sign(message, padding.PKCS1v15(), hashes.SHA256())
+    signature = _PRIVATE_KEY.sign(
+        message,
+        padding.PSS(
+            mgf=padding.MGF1(hashes.SHA256()),
+            salt_length=padding.PSS.DIGEST_LENGTH,
+        ),
+        hashes.SHA256(),
+    )
 
     return {
         "KALSHI-ACCESS-KEY":       KALSHI_API_KEY_ID,
