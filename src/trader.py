@@ -52,10 +52,15 @@ def run_cycle():
 
     print(f"Weather markets fetched: {len(raw_markets)}")
 
+    today = date.today()
     actionable = []
     for m in raw_markets:
         parsed = parse_market(m)
         if parsed is None:
+            continue
+        # Skip today's contracts — weather is already happening and our
+        # forecast model doesn't account for observations made so far today.
+        if parsed["target_date"] <= today:
             continue
         if parsed["target_date"] > horizon_cutoff:
             continue
@@ -132,7 +137,7 @@ def run_cycle():
         bet_usd = max(round(bet_usd), 5)
         side = "yes" if action == "BET_YES" else "no"
         price = yes_price if side == "yes" else market["no_price"]
-        contract_count = max(1, int((bet_usd * 100) / (price * 100)))
+        contract_count = min(200, max(1, int((bet_usd * 100) / (price * 100))))
 
         if PAPER_TRADING:
             print(f"  [PAPER] {action}: {contract_count} contracts @ {price:.2f} (~${bet_usd})\n")
