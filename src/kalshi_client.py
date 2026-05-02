@@ -75,6 +75,8 @@ class KalshiClient:
             params=params,
             timeout=15,
         )
+        if not resp.ok:
+            print(f"Kalshi API error {resp.status_code} on GET {path}: {resp.text}")
         resp.raise_for_status()
         return resp.json()
 
@@ -85,6 +87,8 @@ class KalshiClient:
             json=payload,
             timeout=15,
         )
+        if not resp.ok:
+            print(f"Kalshi API error {resp.status_code} on POST {path}: {resp.text}")
         resp.raise_for_status()
         return resp.json()
 
