@@ -7,6 +7,9 @@ from cryptography.hazmat.primitives.asymmetric import padding
 
 from config import KALSHI_API_KEY, KALSHI_API_KEY_ID, KALSHI_BASE_URL
 
+# The path prefix that Kalshi includes in the signature message
+KALSHI_API_PATH_PREFIX = "/trade-api/v2"
+
 
 def _load_private_key(raw: str):
     """
@@ -36,10 +39,12 @@ _PRIVATE_KEY = _load_private_key(KALSHI_API_KEY)
 def _auth_headers(method: str, path: str) -> dict:
     """
     Generate Kalshi RSA auth headers for a single request.
-    Kalshi signs: timestamp_ms + METHOD + /path (no query string).
+    Kalshi signs: timestamp_ms + METHOD + full_path (no query string).
+    The full path must include the /trade-api/v2 prefix.
     """
     ts = str(int(time.time() * 1000))
-    message = (ts + method.upper() + path).encode("utf-8")
+    full_path = KALSHI_API_PATH_PREFIX + path
+    message = (ts + method.upper() + full_path).encode("utf-8")
 
     signature = _PRIVATE_KEY.sign(message, padding.PKCS1v15(), hashes.SHA256())
 
