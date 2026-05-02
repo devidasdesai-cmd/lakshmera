@@ -112,7 +112,7 @@ class KalshiClient:
         return series
 
     def get_events(self, series_ticker: str = None, limit: int = 200, cursor: str = None) -> dict:
-        params = {"limit": limit, "status": "open"}
+        params = {"limit": limit, "status": "open", "with_nested_markets": "true"}
         if series_ticker:
             params["series_ticker"] = series_ticker
         if cursor:

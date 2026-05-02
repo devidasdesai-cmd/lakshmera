@@ -49,25 +49,28 @@ def run_cycle():
         print("No weather series found. Cannot proceed.")
         return
 
-    # Fetch open events for each weather series
+    # Focus on key daily high-temperature series for our target cities
+    target_series = ["KXHIGHTDAL", "KXHIGHTHOU", "KXHIGHTBOS", "KXHIGHNY", "KXHIGHNY0"]
     all_markets = []
-    for s in weather_series:
-        series_ticker = s.get("ticker")
-        print(f"Fetching events for series: {series_ticker}")
-        cursor = None
-        while True:
-            data = client.get_events(series_ticker=series_ticker, cursor=cursor)
-            events = data.get("events", [])
-            for event in events:
-                for m in event.get("markets", []):
-                    all_markets.append(m)
-            cursor = data.get("cursor")
-            if not cursor:
-                break
-    print(f"\nTotal weather markets found: {len(all_markets)}")
-    print("--- SAMPLE WEATHER MARKETS (first 10) ---")
+    for series_ticker in target_series:
+        print(f"\nFetching events for series: {series_ticker}")
+        data = client.get_events(series_ticker=series_ticker)
+        events = data.get("events", [])
+        print(f"  Events found: {len(events)}")
+
+        # Print raw first event so we can see the full structure
+        if events:
+            import json
+            print(f"  Raw first event: {json.dumps(events[0], indent=2)[:1000]}")
+
+        for event in events:
+            for m in event.get("markets", []):
+                all_markets.append(m)
+
+    print(f"\nTotal markets found across target series: {len(all_markets)}")
+    print("--- SAMPLE MARKETS ---")
     for m in all_markets[:10]:
-        print(f"  ticker={m.get('ticker')} | title={m.get('title')} | close={m.get('close_time')}")
+        print(f"  ticker={m.get('ticker')} | title={m.get('title')} | subtitle={m.get('subtitle')} | close={m.get('close_time')} | yes_ask={m.get('yes_ask')}")
     print("--- END SAMPLE ---\n")
 
     # Filter to temperature markets resolving within our horizon
