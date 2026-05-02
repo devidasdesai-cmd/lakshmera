@@ -8,7 +8,7 @@ from config import (
     MIN_EDGE_THRESHOLD,
     FORECAST_HORIZON_DAYS,
     KELLY_CAP,
-    TARGET_CITIES,
+    TARGET_SERIES,
 )
 from kalshi_client import KalshiClient
 from market_parser import parse_market
@@ -23,60 +23,27 @@ def run_cycle():
 
     client = KalshiClient()
 
-    # Check daily loss limit (only relevant in live mode)
     if not PAPER_TRADING:
         daily_loss = get_daily_realized_loss()
         if daily_loss >= DAILY_LOSS_LIMIT_USD:
             print(f"Daily loss limit of ${DAILY_LOSS_LIMIT_USD} reached. Shutting down.")
             return
 
-    # Discover all available series to find weather series tickers
-    print("Fetching all Kalshi series...")
-    all_series = client.get_all_series()
-    print(f"Total series: {len(all_series)}")
-
-    weather_keywords = ["temp", "weather", "rain", "snow", "wind", "precip", "storm", "hurricane", "high", "degree"]
-    weather_series = [
-        s for s in all_series
-        if any(k.lower() in (s.get("ticker", "") + s.get("title", "")).lower() for k in weather_keywords)
-    ]
-    print(f"\n--- WEATHER-RELATED SERIES ({len(weather_series)} found) ---")
-    for s in weather_series:
-        print(f"  ticker={s.get('ticker')} | title={s.get('title')}")
-    print("--- END SERIES ---\n")
-
-    if not weather_series:
-        print("No weather series found. Cannot proceed.")
-        return
-
-    # Focus on key daily high-temperature series for our target cities
-    target_series = ["KXHIGHTDAL", "KXHIGHTHOU", "KXHIGHTBOS", "KXHIGHNY", "KXHIGHNY0"]
-    all_markets = []
-    for series_ticker in target_series:
-        print(f"\nFetching events for series: {series_ticker}")
-        data = client.get_events(series_ticker=series_ticker)
-        events = data.get("events", [])
-        print(f"  Events found: {len(events)}")
-
-        # Print raw first event so we can see the full structure
-        if events:
-            import json
-            print(f"  Raw first event: {json.dumps(events[0], indent=2)[:1000]}")
-
-        for event in events:
-            for m in event.get("markets", []):
-                all_markets.append(m)
-
-    print(f"\nTotal markets found across target series: {len(all_markets)}")
-    print("--- SAMPLE MARKETS ---")
-    for m in all_markets[:10]:
-        print(f"  ticker={m.get('ticker')} | title={m.get('title')} | subtitle={m.get('subtitle')} | close={m.get('close_time')} | yes_ask={m.get('yes_ask')}")
-    print("--- END SAMPLE ---\n")
-
-    # Filter to temperature markets resolving within our horizon
+    # Fetch markets for each target weather series
     horizon_cutoff = date.today() + timedelta(days=FORECAST_HORIZON_DAYS)
+    raw_markets = []
+
+    for series_ticker in TARGET_SERIES:
+        data = client.get_events(series_ticker=series_ticker)
+        for event in data.get("events", []):
+            for m in event.get("markets", []):
+                raw_markets.append(m)
+
+    print(f"Weather markets fetched: {len(raw_markets)}")
+
+    # Parse and filter to actionable markets within our horizon
     actionable = []
-    for m in all_markets:
+    for m in raw_markets:
         parsed = parse_market(m)
         if parsed is None:
             continue
@@ -84,73 +51,65 @@ def run_cycle():
             continue
         actionable.append(parsed)
 
-    print(f"Temperature markets within {FORECAST_HORIZON_DAYS}-day horizon: {len(actionable)}\n")
+    print(f"Actionable markets within {FORECAST_HORIZON_DAYS}-day horizon: {len(actionable)}\n")
 
-    city_names = {c["name"] for c in TARGET_CITIES}
     bets_placed = 0
 
     for market in actionable:
-        city = market["city"]
-        if city["name"] not in city_names:
-            continue
-
-        ticker = market["ticker"]
+        city        = market["city"]
+        ticker      = market["ticker"]
         target_date = market["target_date"]
         threshold_f = market["threshold_f"]
-        direction = market["direction"]
-        yes_price = market["yes_price"]
+        direction   = market["direction"]
+        low_f       = market["low_f"]
+        high_f      = market["high_f"]
+        yes_price   = market["yes_price"]
 
+        label = (
+            f"{'>' if direction == 'above' else '<' if direction == 'below' else f'{low_f}-{high_f}'}"
+            f"{threshold_f}°F"
+        )
         print(f"Evaluating: {ticker}")
-        print(f"  {city['name']} | {target_date} | high {'above' if direction == 'above' else 'below'} {threshold_f}°F")
-        print(f"  Market YES price: {yes_price:.2f} ({yes_price*100:.0f}¢)")
+        print(f"  {city['name']} | {target_date} | high {label}")
+        print(f"  Market YES price: {yes_price:.2f}")
 
-        # Get our probability estimate from the ensemble model
-        our_prob = estimate_probability(city, target_date, threshold_f, direction)
+        our_prob = estimate_probability(city, target_date, threshold_f, direction, low_f, high_f)
         if our_prob is None:
             print("  Skipping — no forecast data.\n")
             continue
 
-        market_prob = yes_price  # YES price = market-implied probability
-        edge = calculate_edge(our_prob, market_prob)
-
+        edge = calculate_edge(our_prob, yes_price)
         print(f"  Our probability: {our_prob:.2f} | Edge: {edge:+.2f}")
 
-        # Determine action
         if abs(edge) < MIN_EDGE_THRESHOLD:
             action = "NO_BET"
-            print(f"  Action: NO_BET (edge {abs(edge):.2f} < threshold {MIN_EDGE_THRESHOLD})\n")
+            print(f"  Action: NO_BET (edge {abs(edge):.2f} < {MIN_EDGE_THRESHOLD})\n")
         elif edge > 0:
             action = "BET_YES"
         else:
             action = "BET_NO"
 
-        log_signal(city["name"], ticker, our_prob, market_prob, edge, action)
+        log_signal(city["name"], ticker, our_prob, yes_price, edge, action)
 
         if action == "NO_BET":
             continue
 
-        # Size the bet using Kelly Criterion
-        bet_usd = min(
-            kelly_size(abs(edge), STARTING_CAPITAL, KELLY_CAP),
-            MAX_TRADE_SIZE_USD,
-        )
-        # Round to nearest dollar, minimum $5
+        bet_usd = min(kelly_size(abs(edge), STARTING_CAPITAL, KELLY_CAP), MAX_TRADE_SIZE_USD)
         bet_usd = max(round(bet_usd), 5)
-
         side = "yes" if action == "BET_YES" else "no"
-        price_cents = int(market["yes_price"] * 100) if side == "yes" else int(market["no_price"] * 100)
-        # Each Kalshi contract pays $1, so contract count ≈ bet_usd / price
-        contract_count = max(1, int((bet_usd * 100) / price_cents))
+        price = yes_price if side == "yes" else market["no_price"]
+        contract_count = max(1, int((bet_usd * 100) / (price * 100)))
 
         if PAPER_TRADING:
-            print(f"  [PAPER] {action}: {contract_count} contracts @ {price_cents}¢ (~${bet_usd})\n")
-            log_trade(ticker, side, bet_usd, our_prob, market_prob, paper_trade=True)
+            print(f"  [PAPER] {action}: {contract_count} contracts @ {price:.2f} (~${bet_usd})\n")
+            log_trade(ticker, side, bet_usd, our_prob, yes_price, paper_trade=True)
         else:
-            print(f"  [LIVE]  {action}: {contract_count} contracts @ {price_cents}¢ (~${bet_usd})")
+            price_cents = int(price * 100)
+            print(f"  [LIVE] {action}: {contract_count} contracts @ {price_cents}¢ (~${bet_usd})")
             result = client.place_order(ticker, side, contract_count, price_cents)
             print(f"  Order result: {result}\n")
-            log_trade(ticker, side, bet_usd, our_prob, market_prob, paper_trade=False)
+            log_trade(ticker, side, bet_usd, our_prob, yes_price, paper_trade=False)
 
         bets_placed += 1
 
-    print(f"\nCycle complete. Bets placed (or logged as paper): {bets_placed}")
+    print(f"\nCycle complete. Bets placed (or paper logged): {bets_placed}")

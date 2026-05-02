@@ -35,14 +35,19 @@ def get_ensemble_temps(lat: float, lon: float, target_date: date, tz: str) -> li
 
 
 def probability_above(temps: list[float], threshold_f: float) -> float | None:
-    """Fraction of ensemble members where max temp exceeds threshold."""
     if not temps:
         return None
     return sum(1 for t in temps if t > threshold_f) / len(temps)
 
 
 def probability_below(temps: list[float], threshold_f: float) -> float | None:
-    """Fraction of ensemble members where max temp stays below threshold."""
     if not temps:
         return None
-    return sum(1 for t in temps if t <= threshold_f) / len(temps)
+    return sum(1 for t in temps if t < threshold_f) / len(temps)
+
+
+def probability_between(temps: list[float], low_f: float, high_f: float) -> float | None:
+    """Fraction of ensemble members where max temp falls in [low_f, high_f)."""
+    if not temps:
+        return None
+    return sum(1 for t in temps if low_f <= t < high_f) / len(temps)
