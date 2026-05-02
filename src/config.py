@@ -14,7 +14,7 @@ MIN_EDGE_THRESHOLD = 0.05   # Minimum 5% edge required to place any bet
 # --- Kalshi API ---
 KALSHI_API_KEY_ID = os.environ["KALSHI_API_KEY_ID"]   # UUID key identifier
 KALSHI_API_KEY    = os.environ["KALSHI_API_KEY"]       # RSA private key (middle part only)
-KALSHI_BASE_URL   = "https://trading-api.kalshi.com/trade-api/v2"
+KALSHI_BASE_URL   = "https://api.elections.kalshi.com/trade-api/v2"
 
 # --- Database ---
 SUPABASE_DB_URL = os.environ["SUPABASE_DB_URL"]
