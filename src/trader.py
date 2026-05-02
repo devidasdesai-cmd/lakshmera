@@ -17,6 +17,7 @@ from market_parser import parse_market
 from model import calculate_edge, kelly_size
 from weather import get_ensemble_temps, probability_above, probability_below, probability_between
 from database import log_signal, log_trade, get_daily_realized_loss
+from settler import settle_trades
 
 
 def _estimate(temps, direction, threshold_f, low_f, high_f):
@@ -145,14 +146,17 @@ def run_cycle():
 
         if PAPER_TRADING:
             print(f"  [PAPER] {action}: {contract_count} contracts @ {price:.2f} (~${bet_usd})\n")
-            log_trade(ticker, side, bet_usd, our_prob, yes_price, paper_trade=True)
+            log_trade(ticker, side, bet_usd, contract_count, price, our_prob, yes_price, paper_trade=True)
         else:
             price_cents = int(price * 100)
             print(f"  [LIVE] {action}: {contract_count} contracts @ {price_cents}¢ (~${bet_usd})")
             result = client.place_order(ticker, side, contract_count, price_cents)
             print(f"  Order result: {result}\n")
-            log_trade(ticker, side, bet_usd, our_prob, yes_price, paper_trade=False)
+            log_trade(ticker, side, bet_usd, contract_count, price, our_prob, yes_price, paper_trade=False)
 
         bets_placed += 1
 
     print(f"\nCycle complete. Bets placed (or paper logged): {bets_placed}")
+
+    # Check whether any previously placed bets have now settled
+    settle_trades()

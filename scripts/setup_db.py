@@ -25,16 +25,19 @@ CREATE TABLE IF NOT EXISTS signals (
 
 cur.execute("""
 CREATE TABLE IF NOT EXISTS trades (
-    id           SERIAL PRIMARY KEY,
-    ticker       VARCHAR(100),
-    side         VARCHAR(5),
-    amount_usd   DECIMAL(10,2),
-    our_probability   DECIMAL(6,4),
+    id                 SERIAL PRIMARY KEY,
+    ticker             VARCHAR(100),
+    side               VARCHAR(5),
+    amount_usd         DECIMAL(10,2),
+    contract_count     INTEGER,
+    price_paid         DECIMAL(6,4),
+    our_probability    DECIMAL(6,4),
     market_probability DECIMAL(6,4),
-    paper_trade  BOOLEAN DEFAULT TRUE,
-    settled      BOOLEAN DEFAULT FALSE,
-    pnl          DECIMAL(10,2),
-    created_at   TIMESTAMP DEFAULT NOW()
+    paper_trade        BOOLEAN DEFAULT TRUE,
+    settled            BOOLEAN DEFAULT FALSE,
+    result             VARCHAR(5),
+    pnl                DECIMAL(10,2),
+    created_at         TIMESTAMP DEFAULT NOW()
 );
 """)
 
