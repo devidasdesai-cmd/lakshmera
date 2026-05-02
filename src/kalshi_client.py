@@ -95,6 +95,34 @@ class KalshiClient:
     def get_balance(self) -> dict:
         return self._get("/portfolio/balance")
 
+    def get_series(self, limit: int = 200, cursor: str = None) -> dict:
+        params = {"limit": limit}
+        if cursor:
+            params["cursor"] = cursor
+        return self._get("/series", params=params)
+
+    def get_all_series(self) -> list[dict]:
+        series, cursor = [], None
+        while True:
+            data = self.get_series(cursor=cursor)
+            series.extend(data.get("series", []))
+            cursor = data.get("cursor")
+            if not cursor:
+                break
+        return series
+
+    def get_events(self, series_ticker: str = None, limit: int = 200, cursor: str = None) -> dict:
+        params = {"limit": limit, "status": "open"}
+        if series_ticker:
+            params["series_ticker"] = series_ticker
+        if cursor:
+            params["cursor"] = cursor
+        return self._get("/events", params=params)
+
+    def get_markets_for_event(self, event_ticker: str) -> list[dict]:
+        data = self._get(f"/events/{event_ticker}")
+        return data.get("markets", [])
+
     def get_markets(self, status: str = "open", limit: int = 200, cursor: str = None) -> dict:
         params = {"status": status, "limit": limit}
         if cursor:

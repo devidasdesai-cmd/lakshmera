@@ -30,27 +30,45 @@ def run_cycle():
             print(f"Daily loss limit of ${DAILY_LOSS_LIMIT_USD} reached. Shutting down.")
             return
 
-    # Fetch only markets closing within our horizon window
-    print("Fetching open markets from Kalshi...")
-    all_markets = client.get_all_open_markets()
-    print(f"Total open markets fetched: {len(all_markets)}")
+    # Discover all available series to find weather series tickers
+    print("Fetching all Kalshi series...")
+    all_series = client.get_all_series()
+    print(f"Total series: {len(all_series)}")
 
-    # Print 10 sample markets so we can see Kalshi's actual format
-    print("\n--- SAMPLE MARKETS (first 10) ---")
-    for m in all_markets[:10]:
-        print(f"  ticker={m.get('ticker')} | title={m.get('title')} | subtitle={m.get('subtitle')}")
-    print("--- END SAMPLE ---\n")
-
-    # Also print any market whose ticker or title contains weather keywords
-    keywords = ["temp", "weather", "rain", "snow", "wind", "high", "low", "precip", "storm", "KDFW", "KORD", "KJFK"]
-    weather_samples = [
-        m for m in all_markets
-        if any(k.lower() in (m.get("ticker", "") + m.get("title", "")).lower() for k in keywords)
+    weather_keywords = ["temp", "weather", "rain", "snow", "wind", "precip", "storm", "hurricane", "high", "degree"]
+    weather_series = [
+        s for s in all_series
+        if any(k.lower() in (s.get("ticker", "") + s.get("title", "")).lower() for k in weather_keywords)
     ]
-    print(f"--- WEATHER-RELATED MARKETS ({len(weather_samples)} found) ---")
-    for m in weather_samples[:20]:
+    print(f"\n--- WEATHER-RELATED SERIES ({len(weather_series)} found) ---")
+    for s in weather_series:
+        print(f"  ticker={s.get('ticker')} | title={s.get('title')}")
+    print("--- END SERIES ---\n")
+
+    if not weather_series:
+        print("No weather series found. Cannot proceed.")
+        return
+
+    # Fetch open events for each weather series
+    all_markets = []
+    for s in weather_series:
+        series_ticker = s.get("ticker")
+        print(f"Fetching events for series: {series_ticker}")
+        cursor = None
+        while True:
+            data = client.get_events(series_ticker=series_ticker, cursor=cursor)
+            events = data.get("events", [])
+            for event in events:
+                for m in event.get("markets", []):
+                    all_markets.append(m)
+            cursor = data.get("cursor")
+            if not cursor:
+                break
+    print(f"\nTotal weather markets found: {len(all_markets)}")
+    print("--- SAMPLE WEATHER MARKETS (first 10) ---")
+    for m in all_markets[:10]:
         print(f"  ticker={m.get('ticker')} | title={m.get('title')} | close={m.get('close_time')}")
-    print("--- END WEATHER ---\n")
+    print("--- END SAMPLE ---\n")
 
     # Filter to temperature markets resolving within our horizon
     horizon_cutoff = date.today() + timedelta(days=FORECAST_HORIZON_DAYS)
