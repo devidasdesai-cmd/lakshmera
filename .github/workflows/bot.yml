@@ -2,8 +2,9 @@ name: Lakshmera Weather Bot
 
 on:
   schedule:
-    # Runs every 6 hours — aligns with GFS model update cycles (00z, 06z, 12z, 18z UTC)
-    - cron: "0 */6 * * *"
+    # Runs 4 hours after each GFS model update (00z/06z/12z/18z UTC)
+    # GFS data takes ~3-4 hours to process — this catches fresh data each cycle
+    - cron: "0 4,10,16,22 * * *"
   workflow_dispatch: # Allows manual trigger from GitHub Actions tab
 
 jobs:
