@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from 'react'
 import { createPortal } from 'react-dom'
+import Link from 'next/link'
 import { Trade, Signal, parseTicker, pct, dollars, SERIES_TO_CITY } from '../../lib/utils'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -217,9 +218,17 @@ export default function Dashboard({ settled, active, signals }: Props) {
           <h1 className="text-xl font-bold tracking-tight text-white">LAKSHMERA</h1>
           <p className="text-sm text-gray-500 mt-0.5">Weather Prediction Market Bot</p>
         </div>
-        <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-950 text-amber-400 border border-amber-800 mt-1">
-          PAPER TRADING
-        </span>
+        <div className="flex items-center gap-2 mt-1">
+          <Link
+            href="/backtest"
+            className="text-xs font-medium px-2.5 py-1 rounded-full bg-gray-800 text-gray-400 border border-gray-700 hover:text-gray-200 hover:border-gray-500 transition-colors"
+          >
+            Backtest →
+          </Link>
+          <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-950 text-amber-400 border border-amber-800">
+            PAPER TRADING
+          </span>
+        </div>
       </div>
 
       {/* Stats — always all-time, never filtered */}
