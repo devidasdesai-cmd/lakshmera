@@ -1,3 +1,4 @@
+from __future__ import annotations
 import base64
 import time
 
@@ -111,13 +112,27 @@ class KalshiClient:
                 break
         return series
 
-    def get_events(self, series_ticker: str = None, limit: int = 200, cursor: str = None) -> dict:
-        params = {"limit": limit, "status": "open", "with_nested_markets": "true"}
+    def get_events(self, series_ticker: str = None, limit: int = 200,
+                   cursor: str = None, status: str = "open") -> dict:
+        params = {"limit": limit, "with_nested_markets": "true"}
+        if status:
+            params["status"] = status
         if series_ticker:
             params["series_ticker"] = series_ticker
         if cursor:
             params["cursor"] = cursor
         return self._get("/events", params=params)
+
+    def get_all_events(self, series_ticker: str = None, status: str = "open") -> list[dict]:
+        """Paginated version — fetches all events across all cursor pages."""
+        events, cursor = [], None
+        while True:
+            data = self.get_events(series_ticker=series_ticker, cursor=cursor, status=status)
+            events.extend(data.get("events", []))
+            cursor = data.get("cursor")
+            if not cursor:
+                break
+        return events
 
     def get_markets_for_event(self, event_ticker: str) -> list[dict]:
         data = self._get(f"/events/{event_ticker}")

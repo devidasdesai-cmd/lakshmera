@@ -1,0 +1,14 @@
+# Local credentials — never commit these
+local.env
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Node / Next.js
+dashboard/node_modules/
+dashboard/.next/

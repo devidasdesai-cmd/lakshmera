@@ -1,3 +1,4 @@
+from __future__ import annotations
 from datetime import date
 from weather import get_ensemble_temps, probability_above, probability_below, probability_between
 

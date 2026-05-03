@@ -74,6 +74,24 @@ export function parseTicker(ticker: string): ParsedTicker {
   return { city, dateDisplay, typeCode, targetDate, targetDateStr }
 }
 
+export interface BacktestTrade {
+  id: number
+  run_id: string
+  ticker: string
+  city: string | null
+  target_date: string | null
+  side: string | null
+  our_probability: string
+  market_probability: string
+  edge: string
+  action: string
+  contract_count: number | null
+  price_paid: string | null
+  result: string | null
+  pnl: string | null
+  created_at: string
+}
+
 export function pct(val: string | number | null): string {
   if (val === null || val === undefined) return '—'
   return `${(parseFloat(String(val)) * 100).toFixed(0)}%`

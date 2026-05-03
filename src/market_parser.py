@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Parse Kalshi daily high-temperature market data into structured dicts.
 
