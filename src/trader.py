@@ -16,7 +16,7 @@ from kalshi_client import KalshiClient
 from market_parser import parse_market
 from model import calculate_edge, kelly_size
 from weather import get_ensemble_temps, probability_above, probability_below, probability_between
-from database import log_signal, log_trade, get_daily_realized_loss
+from database import log_signal, log_trade, get_daily_realized_loss, get_open_tickers
 from settler import settle_trades
 
 
@@ -70,6 +70,10 @@ def run_cycle():
 
     print(f"Actionable markets within {FORECAST_HORIZON_DAYS}-day horizon: {len(actionable)}\n")
 
+    # Load tickers we already hold so we don't double-bet the same contract
+    open_tickers = get_open_tickers(paper_trade=PAPER_TRADING)
+    print(f"Already holding positions on {len(open_tickers)} ticker(s) — will skip those.\n")
+
     # Pre-fetch ensemble data once per (city, date) — avoids redundant API calls
     # and prevents timeouts when many contracts share the same city+date.
     print("Pre-fetching ensemble forecast data...")
@@ -108,6 +112,10 @@ def run_cycle():
         print(f"Evaluating: {ticker}")
         print(f"  {city['name']} | {target_date} | high {label}")
         print(f"  Market YES price: {yes_price:.2f}")
+
+        if ticker in open_tickers:
+            print(f"  Skipping — already have an open position.\n")
+            continue
 
         temps = ensemble_cache.get((city["name"], target_date))
         if not temps:

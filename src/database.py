@@ -38,6 +38,20 @@ def log_trade(ticker, side, amount_usd, contract_count, price_paid, our_prob, ma
     conn.close()
 
 
+def get_open_tickers(paper_trade: bool = True) -> set:
+    """Return the set of tickers that already have an unsettled open position."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT ticker FROM trades WHERE settled = FALSE AND paper_trade = %s",
+        (paper_trade,)
+    )
+    tickers = {row[0] for row in cur.fetchall()}
+    cur.close()
+    conn.close()
+    return tickers
+
+
 def get_daily_realized_loss():
     """Sum of losses on settled trades today (real trades only)."""
     conn = get_connection()
