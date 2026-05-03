@@ -79,7 +79,7 @@ export default function BacktestDashboard({ trades, runIds }: Props) {
                 ))}
               </select>
             )}
-            <Link href="/" className="text-sm text-blue-400 hover:text-blue-300 underline">
+            <Link href="/" className="text-xs text-gray-500 hover:text-gray-300 transition-colors">
               Dashboard →
             </Link>
           </div>
