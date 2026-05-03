@@ -1,5 +1,5 @@
 from collections import defaultdict
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime, timezone
 
 from config import (
     PAPER_TRADING,
@@ -30,9 +30,22 @@ def _estimate(temps, direction, threshold_f, low_f, high_f):
     return None
 
 
+def _current_gfs_run() -> str:
+    """
+    Returns the GFS cycle that was used this run (e.g. '06z').
+    GFS publishes at 00/06/12/18z UTC. Open-Meteo takes ~4h to process,
+    so we subtract 4h from current UTC time to identify the source cycle.
+    """
+    hour = datetime.now(timezone.utc).hour
+    gfs_cycle = ((hour - 4) % 24 // 6) * 6
+    return f"{gfs_cycle:02d}z"
+
+
 def run_cycle():
+    gfs_run = _current_gfs_run()
+
     print(f"\n{'='*60}")
-    print(f"LAKSHMERA WEATHER BOT — PAPER_TRADING={PAPER_TRADING}")
+    print(f"LAKSHMERA WEATHER BOT — PAPER_TRADING={PAPER_TRADING} | GFS run: {gfs_run}")
     print(f"{'='*60}\n")
 
     client = KalshiClient()
@@ -154,13 +167,13 @@ def run_cycle():
 
         if PAPER_TRADING:
             print(f"  [PAPER] {action}: {contract_count} contracts @ {price:.2f} (~${bet_usd})\n")
-            log_trade(ticker, side, bet_usd, contract_count, price, our_prob, yes_price, paper_trade=True)
+            log_trade(ticker, side, bet_usd, contract_count, price, our_prob, yes_price, paper_trade=True, gfs_run=gfs_run)
         else:
             price_cents = int(price * 100)
             print(f"  [LIVE] {action}: {contract_count} contracts @ {price_cents}¢ (~${bet_usd})")
             result = client.place_order(ticker, side, contract_count, price_cents)
             print(f"  Order result: {result}\n")
-            log_trade(ticker, side, bet_usd, contract_count, price, our_prob, yes_price, paper_trade=False)
+            log_trade(ticker, side, bet_usd, contract_count, price, our_prob, yes_price, paper_trade=False, gfs_run=gfs_run)
 
         bets_placed += 1
 

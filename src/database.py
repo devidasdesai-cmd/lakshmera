@@ -21,17 +21,17 @@ def log_signal(city, ticker, our_prob, market_prob, edge, action):
     conn.close()
 
 
-def log_trade(ticker, side, amount_usd, contract_count, price_paid, our_prob, market_prob, paper_trade):
+def log_trade(ticker, side, amount_usd, contract_count, price_paid, our_prob, market_prob, paper_trade, gfs_run=None):
     conn = get_connection()
     cur = conn.cursor()
     cur.execute(
         """
         INSERT INTO trades
           (ticker, side, amount_usd, contract_count, price_paid,
-           our_probability, market_probability, paper_trade)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+           our_probability, market_probability, paper_trade, gfs_run)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
-        (ticker, side, amount_usd, contract_count, price_paid, our_prob, market_prob, paper_trade),
+        (ticker, side, amount_usd, contract_count, price_paid, our_prob, market_prob, paper_trade, gfs_run),
     )
     conn.commit()
     cur.close()
