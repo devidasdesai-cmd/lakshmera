@@ -207,6 +207,14 @@ export default function Dashboard({ settled, active, signals }: Props) {
     ? `${(wins / enrichedSettled.length * 100).toFixed(1)}%`
     : '—'
 
+  // Filtered stats
+  const filteredPnl     = filteredSettled.reduce((s, t) => s + parseFloat(t.pnl ?? '0'), 0)
+  const filteredWins    = filteredSettled.filter(t => parseFloat(t.pnl ?? '0') > 0).length
+  const filteredLosses  = filteredSettled.filter(t => parseFloat(t.pnl ?? '0') <= 0).length
+  const filteredWinRate = filteredSettled.length > 0
+    ? `${(filteredWins / filteredSettled.length * 100).toFixed(1)}%`
+    : '—'
+
   const filtersActive = !!(fromDate || toDate || city)
 
   return (
@@ -294,9 +302,32 @@ export default function Dashboard({ settled, active, signals }: Props) {
             Clear
           </button>
         )}
-        <span className="text-xs text-gray-700 ml-auto hidden sm:block">
-          Summary cards always show all-time totals
-        </span>
+      </div>
+
+      {/* Filtered summary */}
+      <div>
+        <p className="text-xs text-gray-600 uppercase tracking-wider mb-2 px-0.5">
+          {filtersActive ? 'Filtered results' : 'Showing all trades'}
+        </p>
+        <div className="grid grid-cols-3 gap-3">
+          <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+            <p className="text-xs text-gray-500 uppercase tracking-wider">P&L</p>
+            <p className={`text-2xl font-bold tabular-nums mt-1 ${filteredPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+              {dollars(filteredPnl)}
+            </p>
+            <p className="text-xs text-gray-600 mt-1">{filtersActive ? 'filtered trades' : 'all settled trades'}</p>
+          </div>
+          <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+            <p className="text-xs text-gray-500 uppercase tracking-wider">Win Rate</p>
+            <p className="text-2xl font-bold tabular-nums mt-1 text-white">{filteredWinRate}</p>
+            <p className="text-xs text-gray-600 mt-1">{filteredWins}W · {filteredLosses}L</p>
+          </div>
+          <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+            <p className="text-xs text-gray-500 uppercase tracking-wider">Settled Trades</p>
+            <p className="text-2xl font-bold tabular-nums mt-1 text-white">{filteredSettled.length}</p>
+            <p className="text-xs text-gray-600 mt-1">{filtersActive ? 'matching filters' : 'total resolved'}</p>
+          </div>
+        </div>
       </div>
 
       {/* Recent Results */}
