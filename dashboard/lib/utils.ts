@@ -101,5 +101,12 @@ export function pct(val: string | number | null): string {
 export function dollars(val: string | number | null): string {
   if (val === null || val === undefined) return '—'
   const n = parseFloat(String(val))
-  return `${n >= 0 ? '+' : ''}$${Math.abs(n).toFixed(2)}`
+  const formatted = Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return `${n >= 0 ? '+' : '-'}$${formatted}`
+}
+
+export function currency(val: string | number | null): string {
+  if (val === null || val === undefined) return '—'
+  const n = parseFloat(String(val))
+  return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
