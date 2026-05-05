@@ -10,11 +10,12 @@ from config import (
     MAX_EDGE_THRESHOLD,
     FORECAST_HORIZON_DAYS,
     KELLY_CAP,
+    KALSHI_FEE_RATE,
     TARGET_SERIES,
 )
 from kalshi_client import KalshiClient
 from market_parser import parse_market
-from model import calculate_edge, kelly_size
+from model import kelly_size
 from weather import get_ensemble_temps, probability_above, probability_below, probability_between
 from database import log_signal, log_trade, get_daily_realized_loss, get_open_tickers
 from settler import settle_trades
@@ -113,7 +114,8 @@ def run_cycle():
         direction   = market["direction"]
         low_f       = market["low_f"]
         high_f      = market["high_f"]
-        yes_price   = market["yes_price"]
+        yes_ask     = market["yes_ask"]
+        no_ask      = market["no_ask"]
 
         if direction == "above":
             label = f">{threshold_f}°F"
@@ -124,7 +126,7 @@ def run_cycle():
 
         print(f"Evaluating: {ticker}")
         print(f"  {city['name']} | {target_date} | high {label}")
-        print(f"  Market YES price: {yes_price:.2f}")
+        print(f"  YES ask: {yes_ask:.2f}  NO ask: {no_ask:.2f}")
 
         if ticker in open_tickers:
             print(f"  Skipping — already have an open position.\n")
@@ -140,40 +142,45 @@ def run_cycle():
             print("  Skipping — probability estimate failed.\n")
             continue
 
-        edge = calculate_edge(our_prob, yes_price)
-        print(f"  Our probability: {our_prob:.2f} | Edge: {edge:+.2f}")
+        yes_fee  = KALSHI_FEE_RATE * (1 - yes_ask)
+        no_fee   = KALSHI_FEE_RATE * (1 - no_ask)
+        edge_yes = our_prob - yes_ask - yes_fee
+        edge_no  = (1 - our_prob) - no_ask - no_fee
 
-        if abs(edge) < MIN_EDGE_THRESHOLD:
-            action = "NO_BET"
-            print(f"  Action: NO_BET (edge {abs(edge):.2f} < {MIN_EDGE_THRESHOLD})\n")
-        elif abs(edge) > MAX_EDGE_THRESHOLD:
+        print(f"  Our prob: {our_prob:.2f} | Edge YES: {edge_yes:+.2f}  Edge NO: {edge_no:+.2f}")
+
+        if edge_yes > MAX_EDGE_THRESHOLD or edge_no > MAX_EDGE_THRESHOLD:
             action = "SUSPICIOUS_EDGE"
-            print(f"  Action: SUSPICIOUS_EDGE (edge {abs(edge):.2f} > {MAX_EDGE_THRESHOLD} — possible GFS bias, skipping)\n")
-        elif edge > 0:
+            print(f"  Action: SUSPICIOUS_EDGE (edge exceeds {MAX_EDGE_THRESHOLD} — possible GFS bias, skipping)\n")
+        elif edge_yes > MIN_EDGE_THRESHOLD:
             action = "BET_YES"
-        else:
+        elif edge_no > MIN_EDGE_THRESHOLD:
             action = "BET_NO"
+        else:
+            action = "NO_BET"
+            print(f"  Action: NO_BET (best edge {max(edge_yes, edge_no):.2f} < {MIN_EDGE_THRESHOLD})\n")
 
-        log_signal(city["name"], ticker, our_prob, yes_price, edge, action)
+        log_signal(city["name"], ticker, our_prob, yes_ask, edge_yes, action)
 
         if action in ("NO_BET", "SUSPICIOUS_EDGE"):
             continue
 
-        bet_usd = min(kelly_size(abs(edge), STARTING_CAPITAL, KELLY_CAP), MAX_TRADE_SIZE_USD)
+        active_edge = edge_yes if action == "BET_YES" else edge_no
+        bet_usd = min(kelly_size(active_edge, STARTING_CAPITAL, KELLY_CAP), MAX_TRADE_SIZE_USD)
         bet_usd = max(round(bet_usd), 5)
         side = "yes" if action == "BET_YES" else "no"
-        price = yes_price if side == "yes" else market["no_price"]
+        price = yes_ask if side == "yes" else no_ask
         contract_count = min(200, max(1, int((bet_usd * 100) / (price * 100))))
 
         if PAPER_TRADING:
             print(f"  [PAPER] {action}: {contract_count} contracts @ {price:.2f} (~${bet_usd})\n")
-            log_trade(ticker, side, bet_usd, contract_count, price, our_prob, yes_price, paper_trade=True, gfs_run=gfs_run)
+            log_trade(ticker, side, bet_usd, contract_count, price, our_prob, yes_ask, paper_trade=True, gfs_run=gfs_run)
         else:
             price_cents = int(price * 100)
             print(f"  [LIVE] {action}: {contract_count} contracts @ {price_cents}¢ (~${bet_usd})")
             result = client.place_order(ticker, side, contract_count, price_cents)
             print(f"  Order result: {result}\n")
-            log_trade(ticker, side, bet_usd, contract_count, price, our_prob, yes_price, paper_trade=False, gfs_run=gfs_run)
+            log_trade(ticker, side, bet_usd, contract_count, price, our_prob, yes_ask, paper_trade=False, gfs_run=gfs_run)
 
         bets_placed += 1
 

@@ -7,7 +7,7 @@ export const revalidate = 300
 export default async function Page() {
   const [settled, active, signals] = await Promise.all([
     sql<Trade>(`
-      SELECT id, ticker, side, contract_count, price_paid,
+      SELECT id, ticker, side, amount_usd, contract_count, price_paid,
              our_probability, market_probability, result, pnl,
              created_at::text AS created_at
       FROM trades
@@ -15,7 +15,7 @@ export default async function Page() {
       ORDER BY created_at DESC
     `),
     sql<Trade>(`
-      SELECT id, ticker, side, contract_count, price_paid,
+      SELECT id, ticker, side, amount_usd, contract_count, price_paid,
              our_probability, market_probability, result, pnl,
              created_at::text AS created_at
       FROM trades

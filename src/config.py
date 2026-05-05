@@ -65,3 +65,4 @@ TARGET_SERIES = list(SERIES_TO_CITY.keys())
 # --- Model parameters ---
 FORECAST_HORIZON_DAYS = 7  # Only trade contracts resolving within 7 days
 KELLY_CAP = 0.05           # Never bet more than 5% of capital on one trade
+KALSHI_FEE_RATE = 0.07     # Kalshi charges 7% on net profit per winning trade

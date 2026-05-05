@@ -46,6 +46,12 @@ def parse_market(market: dict) -> dict | None:
     if market_prob <= 0.01 or market_prob >= 0.99:
         return None
 
+    # Ask prices (in cents from API; fall back to last price if unavailable)
+    yes_ask_raw = market.get("yes_ask")
+    no_ask_raw  = market.get("no_ask")
+    yes_ask = (yes_ask_raw / 100) if (yes_ask_raw and 1 < yes_ask_raw < 99) else market_prob
+    no_ask  = (no_ask_raw  / 100) if (no_ask_raw  and 1 < no_ask_raw  < 99) else round(1.0 - market_prob, 4)
+
     # Ticker must have at least 3 dash-separated parts
     parts = ticker.split("-")
     if len(parts) < 3:
@@ -83,6 +89,8 @@ def parse_market(market: dict) -> dict | None:
         "high_f":      high_f,      # bucket upper bound (or None)
         "yes_price":   market_prob,
         "no_price":    round(1.0 - market_prob, 4),
+        "yes_ask":     yes_ask,
+        "no_ask":      no_ask,
         "raw":         market,
     }
 

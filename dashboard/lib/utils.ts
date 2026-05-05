@@ -4,6 +4,7 @@ export interface Trade {
   id: number
   ticker: string
   side: string
+  amount_usd: string | null
   contract_count: number | null
   price_paid: string | null
   our_probability: string

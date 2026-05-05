@@ -37,14 +37,6 @@ def estimate_probability(
     return None
 
 
-def calculate_edge(our_prob: float, market_prob: float) -> float:
-    """
-    Positive → YES is underpriced (bet YES).
-    Negative → NO is underpriced (bet NO).
-    """
-    return our_prob - market_prob
-
-
 def kelly_size(edge: float, capital: float, kelly_cap: float) -> float:
     """
     Simplified Kelly Criterion. Returns dollar bet, capped at kelly_cap * capital.

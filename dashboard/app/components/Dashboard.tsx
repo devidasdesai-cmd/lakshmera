@@ -208,12 +208,14 @@ export default function Dashboard({ settled, active, signals }: Props) {
     : '—'
 
   // Filtered stats
-  const filteredPnl     = filteredSettled.reduce((s, t) => s + parseFloat(t.pnl ?? '0'), 0)
-  const filteredWins    = filteredSettled.filter(t => parseFloat(t.pnl ?? '0') > 0).length
-  const filteredLosses  = filteredSettled.filter(t => parseFloat(t.pnl ?? '0') <= 0).length
-  const filteredWinRate = filteredSettled.length > 0
+  const filteredPnl      = filteredSettled.reduce((s, t) => s + parseFloat(t.pnl ?? '0'), 0)
+  const filteredWins     = filteredSettled.filter(t => parseFloat(t.pnl ?? '0') > 0).length
+  const filteredLosses   = filteredSettled.filter(t => parseFloat(t.pnl ?? '0') <= 0).length
+  const filteredWinRate  = filteredSettled.length > 0
     ? `${(filteredWins / filteredSettled.length * 100).toFixed(1)}%`
     : '—'
+  const filteredCapital  = filteredSettled.reduce((s, t) => s + parseFloat(t.amount_usd ?? '0'), 0)
+  const filteredReturn   = filteredCapital > 0 ? (filteredPnl / filteredCapital) * 100 : null
 
   const filtersActive = !!(fromDate || toDate || city)
 
@@ -309,7 +311,7 @@ export default function Dashboard({ settled, active, signals }: Props) {
         <p className="text-xs text-gray-600 uppercase tracking-wider mb-2 px-0.5">
           {filtersActive ? 'Filtered results' : 'Showing all trades'}
         </p>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
             <p className="text-xs text-gray-500 uppercase tracking-wider">P&L</p>
             <p className={`text-2xl font-bold tabular-nums mt-1 ${filteredPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
@@ -326,6 +328,22 @@ export default function Dashboard({ settled, active, signals }: Props) {
             <p className="text-xs text-gray-500 uppercase tracking-wider">Settled Trades</p>
             <p className="text-2xl font-bold tabular-nums mt-1 text-white">{filteredSettled.length}</p>
             <p className="text-xs text-gray-600 mt-1">{filtersActive ? 'matching filters' : 'total resolved'}</p>
+          </div>
+          <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+            <p className="text-xs text-gray-500 uppercase tracking-wider">Capital Deployed</p>
+            <p className="text-2xl font-bold tabular-nums mt-1 text-white">
+              {filteredCapital > 0 ? `$${filteredCapital.toFixed(2)}` : '—'}
+            </p>
+            <p className="text-xs text-gray-600 mt-1">total dollars risked</p>
+          </div>
+          <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+            <p className="text-xs text-gray-500 uppercase tracking-wider">Return</p>
+            <p className={`text-2xl font-bold tabular-nums mt-1 ${filteredReturn === null ? 'text-gray-600' : filteredReturn >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+              {filteredReturn === null
+                ? '—'
+                : `${filteredReturn >= 0 ? '+' : ''}${filteredReturn.toFixed(1)}%`}
+            </p>
+            <p className="text-xs text-gray-600 mt-1">P&L ÷ capital deployed</p>
           </div>
         </div>
       </div>
