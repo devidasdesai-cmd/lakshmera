@@ -207,6 +207,17 @@ export default function Dashboard({ settled, active, signals }: Props) {
     ? `${(wins / enrichedSettled.length * 100).toFixed(1)}%`
     : '—'
 
+  // Capital flow (unfiltered — full picture of bot's capital usage)
+  const settledWonStakes  = enrichedSettled.filter(t => parseFloat(t.pnl ?? '0') > 0)
+                              .reduce((s, t) => s + parseFloat(t.amount_usd ?? '0'), 0)
+  const settledWonProfit  = enrichedSettled.filter(t => parseFloat(t.pnl ?? '0') > 0)
+                              .reduce((s, t) => s + parseFloat(t.pnl ?? '0'), 0)
+  const recycledFromWins  = settledWonStakes + settledWonProfit
+  const settledDeployed   = enrichedSettled.reduce((s, t) => s + parseFloat(t.amount_usd ?? '0'), 0)
+  const openDeployed      = enrichedActive.reduce((s, t)  => s + parseFloat(t.amount_usd ?? '0'), 0)
+  const grossDeployed     = settledDeployed + openDeployed
+  const netFromCapital    = grossDeployed - recycledFromWins
+
   // Filtered stats
   const filteredPnl      = filteredSettled.reduce((s, t) => s + parseFloat(t.pnl ?? '0'), 0)
   const filteredWins     = filteredSettled.filter(t => parseFloat(t.pnl ?? '0') > 0).length
@@ -265,6 +276,33 @@ export default function Dashboard({ settled, active, signals }: Props) {
           valueClass="text-white"
           sub="total resolved"
         />
+      </div>
+
+      {/* Capital flow — always unfiltered */}
+      <div>
+        <p className="text-xs text-gray-600 uppercase tracking-wider mb-2 px-0.5">Capital flow · all-time</p>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+            <p className="text-xs text-gray-500 uppercase tracking-wider">Gross Deployed</p>
+            <p className="text-2xl font-bold tabular-nums mt-1 text-white">${grossDeployed.toFixed(2)}</p>
+            <p className="text-xs text-gray-600 mt-1">total dollars bet, all time</p>
+          </div>
+          <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+            <p className="text-xs text-gray-500 uppercase tracking-wider">Recycled from Wins</p>
+            <p className="text-2xl font-bold tabular-nums mt-1 text-emerald-400">${recycledFromWins.toFixed(2)}</p>
+            <p className="text-xs text-gray-600 mt-1">winning stakes returned + profit</p>
+          </div>
+          <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+            <p className="text-xs text-gray-500 uppercase tracking-wider">Net from Your Capital</p>
+            <p className="text-2xl font-bold tabular-nums mt-1 text-white">${netFromCapital.toFixed(2)}</p>
+            <p className="text-xs text-gray-600 mt-1">gross minus recycled wins</p>
+          </div>
+          <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+            <p className="text-xs text-gray-500 uppercase tracking-wider">Currently at Risk</p>
+            <p className="text-2xl font-bold tabular-nums mt-1 text-sky-400">${openDeployed.toFixed(2)}</p>
+            <p className="text-xs text-gray-600 mt-1">locked in open positions</p>
+          </div>
+        </div>
       </div>
 
       {/* Filter bar */}
