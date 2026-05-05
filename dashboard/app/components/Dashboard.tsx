@@ -281,16 +281,21 @@ export default function Dashboard({ settled, active, signals }: Props) {
       {/* Capital flow — always unfiltered */}
       <div>
         <p className="text-xs text-gray-600 uppercase tracking-wider mb-2 px-0.5">Capital flow · all-time</p>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
             <p className="text-xs text-gray-500 uppercase tracking-wider">Gross Deployed</p>
             <p className="text-2xl font-bold tabular-nums mt-1 text-white">${grossDeployed.toFixed(2)}</p>
             <p className="text-xs text-gray-600 mt-1">total dollars bet, all time</p>
           </div>
           <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
-            <p className="text-xs text-gray-500 uppercase tracking-wider">Recycled from Wins</p>
-            <p className="text-2xl font-bold tabular-nums mt-1 text-emerald-400">${recycledFromWins.toFixed(2)}</p>
-            <p className="text-xs text-gray-600 mt-1">winning stakes returned + profit</p>
+            <p className="text-xs text-gray-500 uppercase tracking-wider">Stakes Returned</p>
+            <p className="text-2xl font-bold tabular-nums mt-1 text-emerald-400">${settledWonStakes.toFixed(2)}</p>
+            <p className="text-xs text-gray-600 mt-1">original bet amounts won back</p>
+          </div>
+          <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+            <p className="text-xs text-gray-500 uppercase tracking-wider">Profit Earned</p>
+            <p className="text-2xl font-bold tabular-nums mt-1 text-emerald-400">${settledWonProfit.toFixed(2)}</p>
+            <p className="text-xs text-gray-600 mt-1">gains on top of returned stakes</p>
           </div>
           <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
             <p className="text-xs text-gray-500 uppercase tracking-wider">Net from Your Capital</p>
