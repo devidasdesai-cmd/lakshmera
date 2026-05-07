@@ -2,7 +2,7 @@ import { sql } from '../../lib/db'
 import { BacktestTrade } from '../../lib/utils'
 import BacktestDashboard from './components/BacktestDashboard'
 
-export const revalidate = 300
+export const dynamic = 'force-dynamic'
 
 export default async function BacktestPage() {
   const [trades, runRows] = await Promise.all([

@@ -2,7 +2,7 @@ import { sql } from '../lib/db'
 import { Trade, Signal } from '../lib/utils'
 import Dashboard from './components/Dashboard'
 
-export const revalidate = 300
+export const dynamic = 'force-dynamic'
 
 export default async function Page() {
   const [settled, active, signals] = await Promise.all([
