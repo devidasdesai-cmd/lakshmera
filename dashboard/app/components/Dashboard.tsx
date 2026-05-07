@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import Link from 'next/link'
 import { Trade, Signal, parseTicker, pct, dollars, currency, SERIES_TO_CITY } from '../../lib/utils'
@@ -93,18 +93,21 @@ function ColHeader({ label, tip, sortKey, sort, onSort }: {
       >
         <span className={`text-xs font-medium uppercase tracking-wider
           border-b border-dashed transition-colors
-          ${active ? 'text-gray-200 border-gray-400' : 'text-gray-500 border-gray-700 hover:text-gray-300'}`}>
+          ${active
+            ? 'text-gray-800 dark:text-gray-200 border-gray-500 dark:border-gray-400'
+            : 'text-gray-500 dark:text-gray-500 border-gray-300 dark:border-gray-700 hover:text-gray-700 dark:hover:text-gray-300'
+          }`}>
           {label}
         </span>
-        <span className="text-xs text-gray-600">
+        <span className="text-xs text-gray-400 dark:text-gray-600">
           {active ? (sort.dir === 'asc' ? '↑' : '↓') : '↕'}
         </span>
       </button>
 
       {tipPos && createPortal(
         <div
-          className="fixed z-50 w-56 bg-gray-800 border border-gray-700 rounded-lg p-2.5
-            text-xs text-gray-300 shadow-xl pointer-events-none leading-relaxed"
+          className="fixed z-50 w-56 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-2.5
+            text-xs text-gray-700 dark:text-gray-300 shadow-xl pointer-events-none leading-relaxed"
           style={{ left: tipPos.x, top: tipPos.y }}
         >
           {tip}
@@ -122,10 +125,10 @@ function Section({ title, shown, total, children }: {
   children: React.ReactNode
 }) {
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
-        <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">{title}</h2>
-        <span className="text-xs text-gray-600">
+    <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-800">
+        <h2 className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">{title}</h2>
+        <span className="text-xs text-gray-400 dark:text-gray-600">
           {shown < total ? `${shown} of ${total}` : `${total} rows`}
         </span>
       </div>
@@ -135,7 +138,7 @@ function Section({ title, shown, total, children }: {
 }
 
 function Empty({ children }: { children: React.ReactNode }) {
-  return <div className="px-4 py-10 text-center text-sm text-gray-600">{children}</div>
+  return <div className="px-4 py-10 text-center text-sm text-gray-400 dark:text-gray-600">{children}</div>
 }
 
 function StatCard({ label, value, valueClass, sub }: {
@@ -145,10 +148,10 @@ function StatCard({ label, value, valueClass, sub }: {
   sub:        string
 }) {
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+    <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-4">
       <p className="text-xs text-gray-500 uppercase tracking-wider">{label}</p>
       <p className={`text-2xl font-bold tabular-nums mt-1 ${valueClass}`}>{value}</p>
-      <p className="text-xs text-gray-600 mt-1">{sub}</p>
+      <p className="text-xs text-gray-400 dark:text-gray-600 mt-1">{sub}</p>
     </div>
   )
 }
@@ -156,6 +159,23 @@ function StatCard({ label, value, valueClass, sub }: {
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
 
 export default function Dashboard({ settled, active, signals }: Props) {
+
+  // Theme
+  const [isDark, setIsDark] = useState(true)
+
+  useEffect(() => {
+    const stored = localStorage.getItem('theme')
+    const dark = stored !== 'light'
+    setIsDark(dark)
+    document.documentElement.classList.toggle('dark', dark)
+  }, [])
+
+  function toggleTheme() {
+    const newDark = !isDark
+    setIsDark(newDark)
+    document.documentElement.classList.toggle('dark', newDark)
+    localStorage.setItem('theme', newDark ? 'dark' : 'light')
+  }
 
   // Filter state
   const [fromDate, setFromDate] = useState('')
@@ -240,16 +260,41 @@ export default function Dashboard({ settled, active, signals }: Props) {
         <div>
           <Link
             href="/backtest"
-            className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
+            className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
           >
             ← Backtest
           </Link>
-          <h1 className="text-xl font-bold tracking-tight text-white mt-1">LAKSHMERA</h1>
+          <h1 className="text-xl font-bold tracking-tight text-gray-900 dark:text-white mt-1">LAKSHMERA</h1>
           <p className="text-sm text-gray-500 mt-0.5">Weather Prediction Market Bot</p>
         </div>
-        <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-950 text-amber-400 border border-amber-800 mt-1">
-          PAPER TRADING
-        </span>
+        <div className="flex items-center gap-2 mt-1">
+          <button
+            onClick={toggleTheme}
+            aria-label="Toggle light/dark mode"
+            className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition-colors"
+          >
+            {isDark ? (
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="5"/>
+                <line x1="12" y1="1" x2="12" y2="3"/>
+                <line x1="12" y1="21" x2="12" y2="23"/>
+                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+                <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+                <line x1="1" y1="12" x2="3" y2="12"/>
+                <line x1="21" y1="12" x2="23" y2="12"/>
+                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+                <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+              </svg>
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+              </svg>
+            )}
+          </button>
+          <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
+            PAPER TRADING
+          </span>
+        </div>
       </div>
 
       {/* Stats — always all-time, never filtered */}
@@ -257,68 +302,68 @@ export default function Dashboard({ settled, active, signals }: Props) {
         <StatCard
           label="Total P&L"
           value={dollars(totalPnl)}
-          valueClass={totalPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}
+          valueClass={totalPnl >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}
           sub="all-time paper trades"
         />
         <StatCard
           label="Win Rate"
           value={winRate}
-          valueClass="text-white"
+          valueClass="text-gray-900 dark:text-white"
           sub={`${wins}W · ${losses}L`}
         />
         <StatCard
           label="Open Positions"
           value={String(enrichedActive.length)}
-          valueClass="text-sky-400"
+          valueClass="text-sky-600 dark:text-sky-400"
           sub="pending settlement"
         />
         <StatCard
           label="Settled Trades"
           value={String(enrichedSettled.length)}
-          valueClass="text-white"
+          valueClass="text-gray-900 dark:text-white"
           sub="total resolved"
         />
       </div>
 
       {/* Capital flow — always unfiltered */}
       <div>
-        <p className="text-xs text-gray-600 uppercase tracking-wider mb-2 px-0.5">Capital flow · all-time</p>
+        <p className="text-xs text-gray-400 dark:text-gray-600 uppercase tracking-wider mb-2 px-0.5">Capital flow · all-time</p>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-          <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+          <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-4">
             <p className="text-xs text-gray-500 uppercase tracking-wider">Gross Deployed</p>
-            <p className="text-2xl font-bold tabular-nums mt-1 text-white">{currency(grossDeployed)}</p>
-            <p className="text-xs text-gray-600 mt-1">total dollars bet, all time</p>
+            <p className="text-2xl font-bold tabular-nums mt-1 text-gray-900 dark:text-white">{currency(grossDeployed)}</p>
+            <p className="text-xs text-gray-400 dark:text-gray-600 mt-1">total dollars bet, all time</p>
           </div>
-          <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+          <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-4">
             <p className="text-xs text-gray-500 uppercase tracking-wider">Stakes Returned</p>
-            <p className="text-2xl font-bold tabular-nums mt-1 text-emerald-400">{currency(settledWonStakes)}</p>
-            <p className="text-xs text-gray-600 mt-1">original bet amounts won back</p>
+            <p className="text-2xl font-bold tabular-nums mt-1 text-emerald-600 dark:text-emerald-400">{currency(settledWonStakes)}</p>
+            <p className="text-xs text-gray-400 dark:text-gray-600 mt-1">original bet amounts won back</p>
           </div>
-          <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+          <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-4">
             <p className="text-xs text-gray-500 uppercase tracking-wider">Profit Earned</p>
-            <p className="text-2xl font-bold tabular-nums mt-1 text-emerald-400">{currency(settledWonProfit)}</p>
-            <p className="text-xs text-gray-600 mt-1">gains on top of returned stakes</p>
+            <p className="text-2xl font-bold tabular-nums mt-1 text-emerald-600 dark:text-emerald-400">{currency(settledWonProfit)}</p>
+            <p className="text-xs text-gray-400 dark:text-gray-600 mt-1">gains on top of returned stakes</p>
           </div>
-          <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+          <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-4">
             <p className="text-xs text-gray-500 uppercase tracking-wider">Net Losses</p>
-            <p className="text-2xl font-bold tabular-nums mt-1 text-red-400">{currency(settledLostAmount)}</p>
-            <p className="text-xs text-gray-600 mt-1">total lost on settled bets</p>
+            <p className="text-2xl font-bold tabular-nums mt-1 text-red-600 dark:text-red-400">{currency(settledLostAmount)}</p>
+            <p className="text-xs text-gray-400 dark:text-gray-600 mt-1">total lost on settled bets</p>
           </div>
-          <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+          <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-4">
             <p className="text-xs text-gray-500 uppercase tracking-wider">Net from Your Capital</p>
-            <p className="text-2xl font-bold tabular-nums mt-1 text-white">{currency(netFromCapital)}</p>
-            <p className="text-xs text-gray-600 mt-1">gross minus recycled wins</p>
+            <p className="text-2xl font-bold tabular-nums mt-1 text-gray-900 dark:text-white">{currency(netFromCapital)}</p>
+            <p className="text-xs text-gray-400 dark:text-gray-600 mt-1">gross minus recycled wins</p>
           </div>
-          <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+          <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-4">
             <p className="text-xs text-gray-500 uppercase tracking-wider">Currently at Risk</p>
-            <p className="text-2xl font-bold tabular-nums mt-1 text-sky-400">{currency(openDeployed)}</p>
-            <p className="text-xs text-gray-600 mt-1">locked in open positions</p>
+            <p className="text-2xl font-bold tabular-nums mt-1 text-sky-600 dark:text-sky-400">{currency(openDeployed)}</p>
+            <p className="text-xs text-gray-400 dark:text-gray-600 mt-1">locked in open positions</p>
           </div>
         </div>
       </div>
 
       {/* Filter bar */}
-      <div className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+      <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg px-4 py-3 flex flex-wrap items-center gap-x-4 gap-y-2">
         <span className="text-xs text-gray-500 uppercase tracking-wider shrink-0">Filters</span>
         <div className="flex items-center gap-2">
           <label className="text-xs text-gray-500 shrink-0">From</label>
@@ -326,7 +371,7 @@ export default function Dashboard({ settled, active, signals }: Props) {
             type="date"
             value={fromDate}
             onChange={e => setFromDate(e.target.value)}
-            className="bg-gray-800 border border-gray-700 text-gray-300 text-sm rounded px-2 py-1 focus:outline-none focus:border-gray-500"
+            className="bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 text-sm rounded px-2 py-1 focus:outline-none focus:border-gray-400 dark:focus:border-gray-500"
           />
         </div>
         <div className="flex items-center gap-2">
@@ -335,13 +380,13 @@ export default function Dashboard({ settled, active, signals }: Props) {
             type="date"
             value={toDate}
             onChange={e => setToDate(e.target.value)}
-            className="bg-gray-800 border border-gray-700 text-gray-300 text-sm rounded px-2 py-1 focus:outline-none focus:border-gray-500"
+            className="bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 text-sm rounded px-2 py-1 focus:outline-none focus:border-gray-400 dark:focus:border-gray-500"
           />
         </div>
         <select
           value={city}
           onChange={e => setCity(e.target.value)}
-          className="bg-gray-800 border border-gray-700 text-gray-300 text-sm rounded px-2 py-1 focus:outline-none focus:border-gray-500"
+          className="bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 text-sm rounded px-2 py-1 focus:outline-none focus:border-gray-400 dark:focus:border-gray-500"
         >
           <option value="">All Cities</option>
           {cities.map(c => <option key={c} value={c}>{c}</option>)}
@@ -349,7 +394,7 @@ export default function Dashboard({ settled, active, signals }: Props) {
         {filtersActive && (
           <button
             onClick={() => { setFromDate(''); setToDate(''); setCity('') }}
-            className="text-xs text-gray-500 hover:text-gray-300 underline"
+            className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 underline"
           >
             Clear
           </button>
@@ -358,42 +403,42 @@ export default function Dashboard({ settled, active, signals }: Props) {
 
       {/* Filtered summary */}
       <div>
-        <p className="text-xs text-gray-600 uppercase tracking-wider mb-2 px-0.5">
+        <p className="text-xs text-gray-400 dark:text-gray-600 uppercase tracking-wider mb-2 px-0.5">
           {filtersActive ? 'Filtered results' : 'Showing all trades'}
         </p>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-          <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+          <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-4">
             <p className="text-xs text-gray-500 uppercase tracking-wider">P&L</p>
-            <p className={`text-2xl font-bold tabular-nums mt-1 ${filteredPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+            <p className={`text-2xl font-bold tabular-nums mt-1 ${filteredPnl >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
               {dollars(filteredPnl)}
             </p>
-            <p className="text-xs text-gray-600 mt-1">{filtersActive ? 'filtered trades' : 'all settled trades'}</p>
+            <p className="text-xs text-gray-400 dark:text-gray-600 mt-1">{filtersActive ? 'filtered trades' : 'all settled trades'}</p>
           </div>
-          <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+          <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-4">
             <p className="text-xs text-gray-500 uppercase tracking-wider">Win Rate</p>
-            <p className="text-2xl font-bold tabular-nums mt-1 text-white">{filteredWinRate}</p>
-            <p className="text-xs text-gray-600 mt-1">{filteredWins}W · {filteredLosses}L</p>
+            <p className="text-2xl font-bold tabular-nums mt-1 text-gray-900 dark:text-white">{filteredWinRate}</p>
+            <p className="text-xs text-gray-400 dark:text-gray-600 mt-1">{filteredWins}W · {filteredLosses}L</p>
           </div>
-          <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+          <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-4">
             <p className="text-xs text-gray-500 uppercase tracking-wider">Settled Trades</p>
-            <p className="text-2xl font-bold tabular-nums mt-1 text-white">{filteredSettled.length}</p>
-            <p className="text-xs text-gray-600 mt-1">{filtersActive ? 'matching filters' : 'total resolved'}</p>
+            <p className="text-2xl font-bold tabular-nums mt-1 text-gray-900 dark:text-white">{filteredSettled.length}</p>
+            <p className="text-xs text-gray-400 dark:text-gray-600 mt-1">{filtersActive ? 'matching filters' : 'total resolved'}</p>
           </div>
-          <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+          <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-4">
             <p className="text-xs text-gray-500 uppercase tracking-wider">Capital Deployed</p>
-            <p className="text-2xl font-bold tabular-nums mt-1 text-white">
+            <p className="text-2xl font-bold tabular-nums mt-1 text-gray-900 dark:text-white">
               {filteredCapital > 0 ? currency(filteredCapital) : '—'}
             </p>
-            <p className="text-xs text-gray-600 mt-1">total dollars risked</p>
+            <p className="text-xs text-gray-400 dark:text-gray-600 mt-1">total dollars risked</p>
           </div>
-          <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+          <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-4">
             <p className="text-xs text-gray-500 uppercase tracking-wider">Return</p>
-            <p className={`text-2xl font-bold tabular-nums mt-1 ${filteredReturn === null ? 'text-gray-600' : filteredReturn >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+            <p className={`text-2xl font-bold tabular-nums mt-1 ${filteredReturn === null ? 'text-gray-400 dark:text-gray-600' : filteredReturn >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
               {filteredReturn === null
                 ? '—'
                 : `${filteredReturn >= 0 ? '+' : ''}${filteredReturn.toFixed(1)}%`}
             </p>
-            <p className="text-xs text-gray-600 mt-1">P&L ÷ capital deployed</p>
+            <p className="text-xs text-gray-400 dark:text-gray-600 mt-1">P&L ÷ capital deployed</p>
           </div>
         </div>
       </div>
@@ -410,7 +455,7 @@ export default function Dashboard({ settled, active, signals }: Props) {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-800">
+                <tr className="border-b border-gray-200 dark:border-gray-800">
                   <ColHeader label="City"     tip="US city where the weather contract is settled"                                               sortKey="city"          sort={settledSort} onSort={k => setSettledSort(toggleSort(settledSort, k))} />
                   <ColHeader label="Date"     tip="Date the high temperature is measured and the contract resolves"                             sortKey="targetDateStr" sort={settledSort} onSort={k => setSettledSort(toggleSort(settledSort, k))} />
                   <ColHeader label="Contract" tip="T = tail bet (above or below a threshold). B = bucket bet (temperature falls in a range)"   sortKey="typeCode"      sort={settledSort} onSort={k => setSettledSort(toggleSort(settledSort, k))} />
@@ -420,32 +465,32 @@ export default function Dashboard({ settled, active, signals }: Props) {
                   <ColHeader label="P&L"      tip="Dollar profit (green) or loss (red) on this paper trade"                                    sortKey="pnl"           sort={settledSort} onSort={k => setSettledSort(toggleSort(settledSort, k))} />
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-800/60">
+              <tbody className="divide-y divide-gray-200 dark:divide-gray-800/60">
                 {sortedSettled.map(t => {
                   const won    = t.result === t.side
                   const pnlVal = parseFloat(t.pnl ?? '0')
                   return (
-                    <tr key={t.id} className="hover:bg-gray-800/40 transition-colors">
-                      <td className="px-4 py-2.5 text-gray-300">{t.city}</td>
+                    <tr key={t.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/40 transition-colors">
+                      <td className="px-4 py-2.5 text-gray-700 dark:text-gray-300">{t.city}</td>
                       <td className="px-4 py-2.5 text-gray-500 tabular-nums text-xs">{t.dateDisplay}</td>
-                      <td className="px-4 py-2.5 text-gray-300 font-mono text-xs tabular-nums">{t.typeCode}</td>
+                      <td className="px-4 py-2.5 text-gray-700 dark:text-gray-300 font-mono text-xs tabular-nums">{t.typeCode}</td>
                       <td className="px-4 py-2.5">
-                        <span className={`font-medium ${t.side === 'yes' ? 'text-emerald-400' : 'text-red-400'}`}>
+                        <span className={`font-medium ${t.side === 'yes' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
                           {t.side.toUpperCase()}
                         </span>
                       </td>
-                      <td className="px-4 py-2.5 text-gray-300 tabular-nums font-mono text-xs">
+                      <td className="px-4 py-2.5 text-gray-700 dark:text-gray-300 tabular-nums font-mono text-xs">
                         {t.price_paid ? parseFloat(t.price_paid).toFixed(2) : '—'}
                       </td>
                       <td className="px-4 py-2.5">
                         {t.result ? (
-                          <span className={`font-medium ${won ? 'text-emerald-400' : 'text-red-400'}`}>
+                          <span className={`font-medium ${won ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
                             {won ? 'WON' : 'LOST'}
                           </span>
                         ) : '—'}
                       </td>
                       <td className="px-4 py-2.5">
-                        <span className={`font-medium tabular-nums ${pnlVal >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        <span className={`font-medium tabular-nums ${pnlVal >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
                           {dollars(t.pnl)}
                         </span>
                       </td>
@@ -466,7 +511,7 @@ export default function Dashboard({ settled, active, signals }: Props) {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-800">
+                <tr className="border-b border-gray-200 dark:border-gray-800">
                   <ColHeader label="City"     tip="US city where the weather contract is settled"                                               sortKey="city"             sort={activeSort} onSort={k => setActiveSort(toggleSort(activeSort, k))} />
                   <ColHeader label="Date"     tip="Date this contract resolves"                                                                 sortKey="targetDateStr"    sort={activeSort} onSort={k => setActiveSort(toggleSort(activeSort, k))} />
                   <ColHeader label="Contract" tip="T = tail bet (above or below a threshold). B = bucket bet (temperature falls in a range)"   sortKey="typeCode"         sort={activeSort} onSort={k => setActiveSort(toggleSort(activeSort, k))} />
@@ -476,22 +521,22 @@ export default function Dashboard({ settled, active, signals }: Props) {
                   <ColHeader label="Mkt %"    tip="The market's implied probability — the price other traders are paying for YES contracts"     sortKey="market_probability" sort={activeSort} onSort={k => setActiveSort(toggleSort(activeSort, k))} />
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-800/60">
+              <tbody className="divide-y divide-gray-200 dark:divide-gray-800/60">
                 {sortedActive.map(t => (
-                  <tr key={t.id} className="hover:bg-gray-800/40 transition-colors">
-                    <td className="px-4 py-2.5 text-gray-300">{t.city}</td>
+                  <tr key={t.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/40 transition-colors">
+                    <td className="px-4 py-2.5 text-gray-700 dark:text-gray-300">{t.city}</td>
                     <td className="px-4 py-2.5 text-gray-500 tabular-nums text-xs">{t.dateDisplay}</td>
-                    <td className="px-4 py-2.5 text-gray-300 font-mono text-xs tabular-nums">{t.typeCode}</td>
+                    <td className="px-4 py-2.5 text-gray-700 dark:text-gray-300 font-mono text-xs tabular-nums">{t.typeCode}</td>
                     <td className="px-4 py-2.5">
-                      <span className={`font-medium ${t.side === 'yes' ? 'text-emerald-400' : 'text-red-400'}`}>
+                      <span className={`font-medium ${t.side === 'yes' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
                         {t.side.toUpperCase()}
                       </span>
                     </td>
-                    <td className="px-4 py-2.5 text-gray-300 tabular-nums font-mono text-xs">
+                    <td className="px-4 py-2.5 text-gray-700 dark:text-gray-300 tabular-nums font-mono text-xs">
                       {t.price_paid ? parseFloat(t.price_paid).toFixed(2) : '—'}
                     </td>
-                    <td className="px-4 py-2.5 text-gray-300 tabular-nums font-mono text-xs">{pct(t.our_probability)}</td>
-                    <td className="px-4 py-2.5 text-gray-300 tabular-nums font-mono text-xs">{pct(t.market_probability)}</td>
+                    <td className="px-4 py-2.5 text-gray-700 dark:text-gray-300 tabular-nums font-mono text-xs">{pct(t.our_probability)}</td>
+                    <td className="px-4 py-2.5 text-gray-700 dark:text-gray-300 tabular-nums font-mono text-xs">{pct(t.market_probability)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -508,7 +553,7 @@ export default function Dashboard({ settled, active, signals }: Props) {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-800">
+                <tr className="border-b border-gray-200 dark:border-gray-800">
                   <ColHeader label="City"     tip="US city the bot evaluated"                                                                   sortKey="city"               sort={signalSort} onSort={k => setSignalSort(toggleSort(signalSort, k))} />
                   <ColHeader label="Date"     tip="Target date of the contract being evaluated"                                                  sortKey="targetDateStr"      sort={signalSort} onSort={k => setSignalSort(toggleSort(signalSort, k))} />
                   <ColHeader label="Contract" tip="T = tail bet (above or below a threshold). B = bucket bet (temperature falls in a range)"    sortKey="typeCode"           sort={signalSort} onSort={k => setSignalSort(toggleSort(signalSort, k))} />
@@ -518,25 +563,25 @@ export default function Dashboard({ settled, active, signals }: Props) {
                   <ColHeader label="Action"   tip="BET_YES/NO = trade placed. NO_BET = edge too small. SUSPICIOUS_EDGE = edge too large (possible GFS model bias)" sortKey="action" sort={signalSort} onSort={k => setSignalSort(toggleSort(signalSort, k))} />
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-800/60">
+              <tbody className="divide-y divide-gray-200 dark:divide-gray-800/60">
                 {sortedSignals.map((s, i) => {
                   const edge = parseFloat(s.edge)
                   const actionStyle: Record<string, string> = {
-                    BET_YES:         'bg-emerald-950 text-emerald-400 border-emerald-800',
-                    BET_NO:          'bg-red-950 text-red-400 border-red-800',
-                    NO_BET:          'bg-gray-800 text-gray-500 border-gray-700',
-                    SUSPICIOUS_EDGE: 'bg-amber-950 text-amber-400 border-amber-800',
+                    BET_YES:         'bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800',
+                    BET_NO:          'bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800',
+                    NO_BET:          'bg-gray-100 dark:bg-gray-800 text-gray-500 border-gray-300 dark:border-gray-700',
+                    SUSPICIOUS_EDGE: 'bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800',
                   }
-                  const badgeCls = actionStyle[s.action] ?? 'bg-gray-800 text-gray-400 border-gray-700'
+                  const badgeCls = actionStyle[s.action] ?? 'bg-gray-100 dark:bg-gray-800 text-gray-500 border-gray-300 dark:border-gray-700'
                   return (
-                    <tr key={i} className="hover:bg-gray-800/40 transition-colors">
-                      <td className="px-4 py-2.5 text-gray-300">{s.city}</td>
+                    <tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-800/40 transition-colors">
+                      <td className="px-4 py-2.5 text-gray-700 dark:text-gray-300">{s.city}</td>
                       <td className="px-4 py-2.5 text-gray-500 tabular-nums text-xs">{s.dateDisplay}</td>
-                      <td className="px-4 py-2.5 text-gray-300 font-mono text-xs tabular-nums">{s.typeCode}</td>
-                      <td className="px-4 py-2.5 text-gray-300 tabular-nums font-mono text-xs">{pct(s.our_probability)}</td>
-                      <td className="px-4 py-2.5 text-gray-300 tabular-nums font-mono text-xs">{pct(s.market_probability)}</td>
+                      <td className="px-4 py-2.5 text-gray-700 dark:text-gray-300 font-mono text-xs tabular-nums">{s.typeCode}</td>
+                      <td className="px-4 py-2.5 text-gray-700 dark:text-gray-300 tabular-nums font-mono text-xs">{pct(s.our_probability)}</td>
+                      <td className="px-4 py-2.5 text-gray-700 dark:text-gray-300 tabular-nums font-mono text-xs">{pct(s.market_probability)}</td>
                       <td className="px-4 py-2.5">
-                        <span className={`tabular-nums font-mono text-xs font-medium ${edge >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        <span className={`tabular-nums font-mono text-xs font-medium ${edge >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
                           {edge >= 0 ? '+' : ''}{edge.toFixed(2)}
                         </span>
                       </td>
@@ -554,7 +599,7 @@ export default function Dashboard({ settled, active, signals }: Props) {
         )}
       </Section>
 
-      <p className="text-center text-xs text-gray-700 pb-4">
+      <p className="text-center text-xs text-gray-400 dark:text-gray-700 pb-4">
         Refreshes every 5 min · All figures are paper trades
       </p>
     </main>
