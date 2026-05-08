@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect } from 'react'
 import { createPortal } from 'react-dom'
+import Link from 'next/link'
 import { Trade, Signal, parseTicker, pct, dollars, currency, SERIES_TO_CITY } from '../../lib/utils'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -237,7 +238,13 @@ export default function Dashboard({ settled, active, signals }: Props) {
           <h1 className="text-xl font-bold tracking-tight text-gray-900 dark:text-white">LAKSHMERA</h1>
           <p className="text-sm text-gray-500 mt-0.5">Weather Prediction Market Bot</p>
         </div>
-        <div className="flex items-center gap-2 mt-1">
+        <div className="flex items-center gap-3 mt-1">
+          <Link
+            href="/analytics"
+            className="text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
+          >
+            Analytics →
+          </Link>
           <button
             onClick={toggleTheme}
             aria-label="Toggle light/dark mode"
