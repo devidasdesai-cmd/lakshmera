@@ -140,21 +140,6 @@ function Empty({ children }: { children: React.ReactNode }) {
   return <div className="px-4 py-10 text-center text-sm text-gray-400 dark:text-gray-600">{children}</div>
 }
 
-function StatCard({ label, value, valueClass, sub }: {
-  label:      string
-  value:      string
-  valueClass: string
-  sub:        string
-}) {
-  return (
-    <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-4">
-      <p className="text-xs text-gray-500 uppercase tracking-wider">{label}</p>
-      <p className={`text-2xl font-bold tabular-nums mt-1 ${valueClass}`}>{value}</p>
-      <p className="text-xs text-gray-400 dark:text-gray-600 mt-1">{sub}</p>
-    </div>
-  )
-}
-
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
 
 export default function Dashboard({ settled, active, signals }: Props) {
@@ -217,14 +202,6 @@ export default function Dashboard({ settled, active, signals }: Props) {
   const sortedSettled = useMemo(() => applySort(filteredSettled, settledSort), [filteredSettled, settledSort])
   const sortedActive  = useMemo(() => applySort(filteredActive,  activeSort),  [filteredActive,  activeSort])
   const sortedSignals = useMemo(() => applySort(filteredSignals, signalSort),  [filteredSignals, signalSort])
-
-  // All-time stats (unfiltered)
-  const totalPnl    = enrichedSettled.reduce((s, t) => s + parseFloat(t.pnl ?? '0'), 0)
-  const wins        = enrichedSettled.filter(t => parseFloat(t.pnl ?? '0') > 0).length
-  const losses      = enrichedSettled.filter(t => parseFloat(t.pnl ?? '0') <= 0).length
-  const winRate     = enrichedSettled.length > 0
-    ? `${(wins / enrichedSettled.length * 100).toFixed(1)}%`
-    : '—'
 
   // Capital flow (unfiltered — full picture of bot's capital usage)
   const settledWonStakes  = enrichedSettled.filter(t => parseFloat(t.pnl ?? '0') > 0)
@@ -290,34 +267,6 @@ export default function Dashboard({ settled, active, signals }: Props) {
         </div>
       </div>
 
-      {/* Stats — always all-time, never filtered */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatCard
-          label="Total P&L"
-          value={dollars(totalPnl)}
-          valueClass={totalPnl >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}
-          sub="all-time paper trades"
-        />
-        <StatCard
-          label="Total Win Rate"
-          value={winRate}
-          valueClass="text-gray-900 dark:text-white"
-          sub={`${wins}W · ${losses}L`}
-        />
-        <StatCard
-          label="Current Open Positions"
-          value={String(enrichedActive.length)}
-          valueClass="text-sky-600 dark:text-sky-400"
-          sub="pending settlement"
-        />
-        <StatCard
-          label="Total Settled Trades"
-          value={String(enrichedSettled.length)}
-          valueClass="text-gray-900 dark:text-white"
-          sub="total resolved"
-        />
-      </div>
-
       {/* Capital flow — always unfiltered */}
       <div>
         <p className="text-xs text-gray-400 dark:text-gray-600 uppercase tracking-wider mb-2 px-0.5">Capital flow · all-time</p>
@@ -343,14 +292,14 @@ export default function Dashboard({ settled, active, signals }: Props) {
             <p className="text-xs text-gray-400 dark:text-gray-600 mt-1">total lost on settled bets</p>
           </div>
           <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-4">
-            <p className="text-xs text-gray-500 uppercase tracking-wider">Net from Your Capital</p>
+            <p className="text-xs text-gray-500 uppercase tracking-wider">Net from Capital</p>
             <p className="text-2xl font-bold tabular-nums mt-1 text-gray-900 dark:text-white">{currency(netFromCapital)}</p>
             <p className="text-xs text-gray-400 dark:text-gray-600 mt-1">gross minus recycled wins</p>
           </div>
           <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-4">
             <p className="text-xs text-gray-500 uppercase tracking-wider">Currently at Risk</p>
             <p className="text-2xl font-bold tabular-nums mt-1 text-sky-600 dark:text-sky-400">{currency(openDeployed)}</p>
-            <p className="text-xs text-gray-400 dark:text-gray-600 mt-1">locked in open positions</p>
+            <p className="text-xs text-gray-400 dark:text-gray-600 mt-1">across {enrichedActive.length} open positions</p>
           </div>
         </div>
       </div>
