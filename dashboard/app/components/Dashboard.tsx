@@ -306,19 +306,19 @@ export default function Dashboard({ settled, active, signals }: Props) {
           sub="all-time paper trades"
         />
         <StatCard
-          label="Win Rate"
+          label="Total Win Rate"
           value={winRate}
           valueClass="text-gray-900 dark:text-white"
           sub={`${wins}W · ${losses}L`}
         />
         <StatCard
-          label="Open Positions"
+          label="Current Open Positions"
           value={String(enrichedActive.length)}
           valueClass="text-sky-600 dark:text-sky-400"
           sub="pending settlement"
         />
         <StatCard
-          label="Settled Trades"
+          label="Total Settled Trades"
           value={String(enrichedSettled.length)}
           valueClass="text-gray-900 dark:text-white"
           sub="total resolved"
