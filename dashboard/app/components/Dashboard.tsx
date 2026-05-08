@@ -2,7 +2,6 @@
 
 import { useState, useMemo, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import Link from 'next/link'
 import { Trade, Signal, parseTicker, pct, dollars, currency, SERIES_TO_CITY } from '../../lib/utils'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -258,13 +257,7 @@ export default function Dashboard({ settled, active, signals }: Props) {
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <Link
-            href="/backtest"
-            className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
-          >
-            ← Backtest
-          </Link>
-          <h1 className="text-xl font-bold tracking-tight text-gray-900 dark:text-white mt-1">LAKSHMERA</h1>
+          <h1 className="text-xl font-bold tracking-tight text-gray-900 dark:text-white">LAKSHMERA</h1>
           <p className="text-sm text-gray-500 mt-0.5">Weather Prediction Market Bot</p>
         </div>
         <div className="flex items-center gap-2 mt-1">

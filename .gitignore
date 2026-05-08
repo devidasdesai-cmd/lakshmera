@@ -12,3 +12,4 @@ venv/
 # Node / Next.js
 dashboard/node_modules/
 dashboard/.next/
+.vercel
