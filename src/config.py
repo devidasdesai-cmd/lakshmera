@@ -11,6 +11,7 @@ MAX_TRADE_SIZE_USD = 100    # Hard cap per trade
 DAILY_LOSS_LIMIT_USD = 150  # Bot shuts down for the day if hit
 MIN_EDGE_THRESHOLD = 0.05   # Minimum 5% edge required to place any bet
 MAX_EDGE_THRESHOLD = 0.55   # Edge above this is likely a model bias artifact — log but don't bet
+MAX_NO_BET_YES_PRICE = 0.30 # Don't bet NO when market prices YES above this — payout too thin at 30%+ YES price
 
 # --- Kalshi API ---
 KALSHI_API_KEY_ID = os.environ["KALSHI_API_KEY_ID"]

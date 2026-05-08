@@ -8,6 +8,7 @@ from config import (
     DAILY_LOSS_LIMIT_USD,
     MIN_EDGE_THRESHOLD,
     MAX_EDGE_THRESHOLD,
+    MAX_NO_BET_YES_PRICE,
     FORECAST_HORIZON_DAYS,
     KELLY_CAP,
     KALSHI_FEE_RATE,
@@ -69,14 +70,17 @@ def run_cycle():
     print(f"Weather markets fetched: {len(raw_markets)}")
 
     today = date.today()
+    # 18z run fires at 22 UTC (5pm CT) — tomorrow's contracts are already efficiently
+    # priced by this point. Focus on 2+ days out where the late-day forecast is still
+    # genuinely new information for the market.
+    min_target_date = today + timedelta(days=2 if gfs_run == "18z" else 1)
+
     actionable = []
     for m in raw_markets:
         parsed = parse_market(m)
         if parsed is None:
             continue
-        # Skip today's contracts — weather is already happening and our
-        # forecast model doesn't account for observations made so far today.
-        if parsed["target_date"] <= today:
+        if parsed["target_date"] < min_target_date:
             continue
         if parsed["target_date"] > horizon_cutoff:
             continue
@@ -155,7 +159,11 @@ def run_cycle():
         elif edge_yes > MIN_EDGE_THRESHOLD:
             action = "BET_YES"
         elif edge_no > MIN_EDGE_THRESHOLD:
-            action = "BET_NO"
+            if yes_ask > MAX_NO_BET_YES_PRICE:
+                action = "NO_BET"
+                print(f"  Action: NO_BET (NO edge {edge_no:+.2f} but YES price {yes_ask:.2f} > {MAX_NO_BET_YES_PRICE} cap)\n")
+            else:
+                action = "BET_NO"
         else:
             action = "NO_BET"
             print(f"  Action: NO_BET (best edge {max(edge_yes, edge_no):.2f} < {MIN_EDGE_THRESHOLD})\n")
