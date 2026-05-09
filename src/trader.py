@@ -158,7 +158,11 @@ def run_cycle():
             action = "SUSPICIOUS_EDGE"
             print(f"  Action: SUSPICIOUS_EDGE (edge exceeds {MAX_EDGE_THRESHOLD} — possible GFS bias, skipping)\n")
         elif edge_yes > MIN_EDGE_THRESHOLD:
-            action = "BET_YES"
+            if direction == "bucket":
+                action = "NO_BET"
+                print(f"  Action: NO_BET (YES edge {edge_yes:+.2f} but bucket contract — GFS too imprecise for 2°F ranges)\n")
+            else:
+                action = "BET_YES"
         elif edge_no > MIN_EDGE_THRESHOLD:
             if yes_ask > MAX_NO_BET_YES_PRICE:
                 action = "NO_BET"
