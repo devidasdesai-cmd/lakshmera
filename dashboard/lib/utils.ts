@@ -39,6 +39,18 @@ export const SERIES_TO_CITY: Record<string, string> = {
   KXHIGHTSATX: 'San Antonio',
   KXHIGHTSFO:  'San Francisco',
   KXHIGHTOKC:  'Oklahoma City',
+  // Rain series
+  KXRAINDALM:  'Dallas',
+  KXRAINHOUM:  'Houston',
+  KXRAINCHIM:  'Chicago',
+  KXRAINSEAM:  'Seattle',
+  KXRAINLAXM:  'Los Angeles',
+  KXRAINSFOM:  'San Francisco',
+  KXRAINMIAM:  'Miami',
+  KXRAINNYCM:  'New York',
+  KXRAINDENM:  'Denver',
+  KXRAINAUSM:  'Austin',
+  KXRAINNO:    'New Orleans',
 }
 
 const MONTHS: Record<string, number> = {
@@ -52,27 +64,57 @@ export interface ParsedTicker {
   typeCode: string
   targetDate: Date | null
   targetDateStr: string  // YYYY-MM-DD for filter comparison
+  isRain: boolean
+}
+
+const RAIN_SERIES = new Set(Object.keys(SERIES_TO_CITY).filter(k => k.startsWith('KXRAIN')))
+
+function daysInMonth(year: number, month: number): number {
+  return new Date(year, month + 1, 0).getDate()
 }
 
 export function parseTicker(ticker: string): ParsedTicker {
-  const [series = '', dateStr = '', typeCode = ''] = ticker.split('-')
-  const city = SERIES_TO_CITY[series] ?? series
+  const parts   = ticker.split('-')
+  const series  = parts[0] ?? ''
+  const dateStr = parts[1] ?? ''
+  const thirdPart = parts[2] ?? ''
+  const city    = SERIES_TO_CITY[series] ?? series
+  const isRain  = RAIN_SERIES.has(series)
 
-  let dateDisplay = dateStr
+  let dateDisplay   = dateStr
   let targetDate: Date | null = null
   let targetDateStr = ''
+  let typeCode      = thirdPart
 
-  const m = dateStr.match(/^(\d{2})([A-Z]{3})(\d{2})$/)
-  if (m) {
-    targetDate    = new Date(2000 + parseInt(m[1]), MONTHS[m[2]] ?? 0, parseInt(m[3]))
-    dateDisplay   = targetDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-    const yr      = targetDate.getFullYear()
-    const mo      = String(targetDate.getMonth() + 1).padStart(2, '0')
-    const dy      = String(targetDate.getDate()).padStart(2, '0')
-    targetDateStr = `${yr}-${mo}-${dy}`
+  if (isRain) {
+    // Rain format: YYMON (e.g. 26MAY) — monthly contract
+    const m = dateStr.match(/^(\d{2})([A-Z]{3})$/)
+    if (m) {
+      const year  = 2000 + parseInt(m[1])
+      const month = MONTHS[m[2]] ?? 0
+      const lastDay = daysInMonth(year, month)
+      targetDate    = new Date(year, month, lastDay)
+      dateDisplay   = targetDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+      const mo      = String(month + 1).padStart(2, '0')
+      const dy      = String(lastDay).padStart(2, '0')
+      targetDateStr = `${year}-${mo}-${dy}`
+    }
+    // Show threshold as >X" instead of bare number
+    if (thirdPart) typeCode = `>${thirdPart}"`
+  } else {
+    // Temperature format: YYMONDD (e.g. 26MAY09)
+    const m = dateStr.match(/^(\d{2})([A-Z]{3})(\d{2})$/)
+    if (m) {
+      targetDate    = new Date(2000 + parseInt(m[1]), MONTHS[m[2]] ?? 0, parseInt(m[3]))
+      dateDisplay   = targetDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+      const yr      = targetDate.getFullYear()
+      const mo      = String(targetDate.getMonth() + 1).padStart(2, '0')
+      const dy      = String(targetDate.getDate()).padStart(2, '0')
+      targetDateStr = `${yr}-${mo}-${dy}`
+    }
   }
 
-  return { city, dateDisplay, typeCode, targetDate, targetDateStr }
+  return { city, dateDisplay, typeCode, targetDate, targetDateStr, isRain }
 }
 
 export function pct(val: string | number | null): string {

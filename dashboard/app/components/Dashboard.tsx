@@ -21,24 +21,26 @@ interface EnrichedTrade extends Trade {
   dateDisplay:   string
   typeCode:      string
   targetDateStr: string
+  isRain:        boolean
 }
 
 interface EnrichedSignal extends Signal {
   dateDisplay:   string
   typeCode:      string
   targetDateStr: string
+  isRain:        boolean
 }
 
 // ─── Enrichment ──────────────────────────────────────────────────────────────
 
 function enrichTrade(t: Trade): EnrichedTrade {
-  const { city, dateDisplay, typeCode, targetDateStr } = parseTicker(t.ticker)
-  return { ...t, city, dateDisplay, typeCode, targetDateStr }
+  const { city, dateDisplay, typeCode, targetDateStr, isRain } = parseTicker(t.ticker)
+  return { ...t, city, dateDisplay, typeCode, targetDateStr, isRain }
 }
 
 function enrichSignal(s: Signal): EnrichedSignal {
-  const { dateDisplay, typeCode, targetDateStr } = parseTicker(s.ticker)
-  return { ...s, dateDisplay, typeCode, targetDateStr }
+  const { dateDisplay, typeCode, targetDateStr, isRain } = parseTicker(s.ticker)
+  return { ...s, dateDisplay, typeCode, targetDateStr, isRain }
 }
 
 // ─── Sorting ─────────────────────────────────────────────────────────────────
@@ -420,7 +422,12 @@ export default function Dashboard({ settled, active, signals }: Props) {
                   const pnlVal = parseFloat(t.pnl ?? '0')
                   return (
                     <tr key={t.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/40 transition-colors">
-                      <td className="px-4 py-2.5 text-gray-700 dark:text-gray-300">{t.city}</td>
+                      <td className="px-4 py-2.5 text-gray-700 dark:text-gray-300">
+                        <span className="flex items-center gap-1.5">
+                          {t.city}
+                          {t.isRain && <span className="text-xs font-medium px-1.5 py-0.5 rounded border bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-800">RAIN</span>}
+                        </span>
+                      </td>
                       <td className="px-4 py-2.5 text-gray-500 tabular-nums text-xs">{t.dateDisplay}</td>
                       <td className="px-4 py-2.5 text-gray-700 dark:text-gray-300 font-mono text-xs tabular-nums">{t.typeCode}</td>
                       <td className="px-4 py-2.5">
@@ -473,7 +480,12 @@ export default function Dashboard({ settled, active, signals }: Props) {
               <tbody className="divide-y divide-gray-200 dark:divide-gray-800/60">
                 {sortedActive.map(t => (
                   <tr key={t.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/40 transition-colors">
-                    <td className="px-4 py-2.5 text-gray-700 dark:text-gray-300">{t.city}</td>
+                    <td className="px-4 py-2.5 text-gray-700 dark:text-gray-300">
+                      <span className="flex items-center gap-1.5">
+                        {t.city}
+                        {t.isRain && <span className="text-xs font-medium px-1.5 py-0.5 rounded border bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-800">RAIN</span>}
+                      </span>
+                    </td>
                     <td className="px-4 py-2.5 text-gray-500 tabular-nums text-xs">{t.dateDisplay}</td>
                     <td className="px-4 py-2.5 text-gray-700 dark:text-gray-300 font-mono text-xs tabular-nums">{t.typeCode}</td>
                     <td className="px-4 py-2.5">
@@ -524,7 +536,12 @@ export default function Dashboard({ settled, active, signals }: Props) {
                   const badgeCls = actionStyle[s.action] ?? 'bg-gray-100 dark:bg-gray-800 text-gray-500 border-gray-300 dark:border-gray-700'
                   return (
                     <tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-800/40 transition-colors">
-                      <td className="px-4 py-2.5 text-gray-700 dark:text-gray-300">{s.city}</td>
+                      <td className="px-4 py-2.5 text-gray-700 dark:text-gray-300">
+                        <span className="flex items-center gap-1.5">
+                          {s.city}
+                          {s.isRain && <span className="text-xs font-medium px-1.5 py-0.5 rounded border bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-800">RAIN</span>}
+                        </span>
+                      </td>
                       <td className="px-4 py-2.5 text-gray-500 tabular-nums text-xs">{s.dateDisplay}</td>
                       <td className="px-4 py-2.5 text-gray-700 dark:text-gray-300 font-mono text-xs tabular-nums">{s.typeCode}</td>
                       <td className="px-4 py-2.5 text-gray-700 dark:text-gray-300 tabular-nums font-mono text-xs">{pct(s.our_probability)}</td>
