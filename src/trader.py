@@ -9,6 +9,7 @@ from config import (
     MIN_EDGE_THRESHOLD,
     MAX_EDGE_THRESHOLD,
     MAX_NO_BET_YES_PRICE,
+    MAX_NO_BET_OUR_PROB,
     FORECAST_HORIZON_DAYS,
     KELLY_CAP,
     KALSHI_FEE_RATE,
@@ -162,6 +163,9 @@ def run_cycle():
             if yes_ask > MAX_NO_BET_YES_PRICE:
                 action = "NO_BET"
                 print(f"  Action: NO_BET (NO edge {edge_no:+.2f} but YES price {yes_ask:.2f} > {MAX_NO_BET_YES_PRICE} cap)\n")
+            elif our_prob > MAX_NO_BET_OUR_PROB:
+                action = "NO_BET"
+                print(f"  Action: NO_BET (NO edge {edge_no:+.2f} but our prob {our_prob:.2f} > {MAX_NO_BET_OUR_PROB} threshold)\n")
             else:
                 action = "BET_NO"
         else:

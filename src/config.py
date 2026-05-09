@@ -11,7 +11,8 @@ MAX_TRADE_SIZE_USD = 100    # Hard cap per trade
 DAILY_LOSS_LIMIT_USD = 150  # Bot shuts down for the day if hit
 MIN_EDGE_THRESHOLD = 0.05   # Minimum 5% edge required to place any bet
 MAX_EDGE_THRESHOLD = 0.55   # Edge above this is likely a model bias artifact — log but don't bet
-MAX_NO_BET_YES_PRICE = 0.30 # Don't bet NO when market prices YES above this — payout too thin at 30%+ YES price
+MAX_NO_BET_YES_PRICE = 0.20 # Don't bet NO when market prices YES above this — 20-30% range losing -$246 in data
+MAX_NO_BET_OUR_PROB = 0.12  # Don't bet NO when our model gives YES >12% — GFS overestimates cold, losses -$816 above this
 
 # --- Kalshi API ---
 KALSHI_API_KEY_ID = os.environ["KALSHI_API_KEY_ID"]
@@ -59,7 +60,7 @@ SERIES_TO_CITY = {
     "KXHIGHLAX":   "Los Angeles",
     "KXHIGHTPHX":  "Phoenix",
     "KXHIGHTDC":   "DC",
-    "KXHIGHTLV":   "Las Vegas",
+    # "KXHIGHTLV": "Las Vegas",  # Disabled — consistent -$362 loss, GFS warm bias in desert heat
     "KXHIGHTSEA":  "Seattle",
     "KXHIGHTSATX": "San Antonio",
     "KXHIGHTSFO":  "San Francisco",
