@@ -120,7 +120,7 @@ function ColHeader({ label, tip, sortKey, sort, onSort }: {
   )
 }
 
-function Section({ title, shown, total, children, className = '' }: {
+function Section({ title, shown, total, children, className = 'border border-gray-200 dark:border-gray-800' }: {
   title:     string
   shown:     number
   total:     number
@@ -128,7 +128,7 @@ function Section({ title, shown, total, children, className = '' }: {
   className?: string
 }) {
   return (
-    <div className={`border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden ${className}`}>
+    <div className={`rounded-lg overflow-hidden ${className}`}>
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-800">
         <h2 className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">{title}</h2>
         <span className="text-xs text-gray-400 dark:text-gray-600">
@@ -396,7 +396,7 @@ export default function Dashboard({ settled, active, signals }: Props) {
       </div>
 
       {/* Recent Results */}
-      <Section title="Recent Results" shown={sortedSettled.length} total={enrichedSettled.length} className="bg-emerald-50 dark:bg-emerald-900/10">
+      <Section title="Recent Results" shown={sortedSettled.length} total={enrichedSettled.length} className="bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-700">
         {sortedSettled.length === 0 ? (
           <Empty>
             {filtersActive
@@ -461,7 +461,7 @@ export default function Dashboard({ settled, active, signals }: Props) {
       </Section>
 
       {/* Active Positions */}
-      <Section title="Active Positions" shown={sortedActive.length} total={enrichedActive.length} className="bg-sky-50 dark:bg-sky-900/10">
+      <Section title="Active Positions" shown={sortedActive.length} total={enrichedActive.length} className="bg-sky-50 dark:bg-sky-900/30 border border-sky-200 dark:border-sky-700">
         {sortedActive.length === 0 ? (
           <Empty>{filtersActive ? 'No open positions match the current filters.' : 'No open positions.'}</Empty>
         ) : (
@@ -508,7 +508,7 @@ export default function Dashboard({ settled, active, signals }: Props) {
       </Section>
 
       {/* Signal Log */}
-      <Section title="Signal Log" shown={sortedSignals.length} total={enrichedSignals.length} className="bg-violet-50 dark:bg-violet-900/10">
+      <Section title="Signal Log" shown={sortedSignals.length} total={enrichedSignals.length} className="bg-violet-50 dark:bg-violet-900/30 border border-violet-200 dark:border-violet-700">
         {sortedSignals.length === 0 ? (
           <Empty>{filtersActive ? 'No signals match the current filters.' : 'No signals logged yet.'}</Empty>
         ) : (
