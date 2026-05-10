@@ -7,9 +7,10 @@ PAPER_TRADING = True
 
 # --- Capital management ---
 STARTING_CAPITAL = 5000
-MAX_TRADE_SIZE_USD = 200    # Hard cap per trade. Raised from 100 alongside calibration.
-                            # Set back to 100 if calibration underperforms in forward testing.
-DAILY_LOSS_LIMIT_USD = 300  # Bot shuts down for the day if hit (raised proportional to MAX_TRADE_SIZE_USD)
+MAX_TRADE_SIZE_USD = 100    # Hard cap per trade. Keep at 100 until calibration is validated
+                            # by forward-test data (~3-4 weeks). Raise to 200 only if cumulative
+                            # P&L is ≥ +$500 over that period.
+DAILY_LOSS_LIMIT_USD = 150  # Bot shuts down for the day if hit
 MIN_EDGE_THRESHOLD = 0.05   # Minimum 5% edge required to place any bet
 MAX_EDGE_THRESHOLD = 0.55   # Edge above this is likely a model bias artifact — log but don't bet
 MAX_NO_BET_YES_PRICE = 0.20 # Don't bet NO when market prices YES above this — 20-30% range lost -$246 in data
