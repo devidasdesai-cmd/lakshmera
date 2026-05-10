@@ -44,3 +44,18 @@ def kelly_size(edge: float, capital: float, kelly_cap: float) -> float:
     if edge <= 0:
         return 0.0
     return min(edge, kelly_cap) * capital
+
+
+def calibrate_probability(raw_prob: float) -> float:
+    """
+    Shrink raw GFS-derived probability toward the empirical base rate.
+
+    Our raw model is overconfident at extremes. When we predict 0-5% YES,
+    actual outcome is ~22%. When we predict 70%+, actual is ~25%. The market
+    is well-calibrated; our model is not. This correction brings predictions
+    closer to reality before computing edge.
+
+    Set CALIBRATION_ALPHA = 1.0 in config to disable.
+    """
+    from config import CALIBRATION_ALPHA, TEMPERATURE_BASE_RATE
+    return CALIBRATION_ALPHA * raw_prob + (1 - CALIBRATION_ALPHA) * TEMPERATURE_BASE_RATE

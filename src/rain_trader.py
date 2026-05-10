@@ -10,6 +10,7 @@ from config import (
     MAX_EDGE_THRESHOLD,
     MAX_NO_BET_YES_PRICE,
     MAX_NO_BET_OUR_PROB,
+    ONE_BET_PER_CITY_DATE,
     KELLY_CAP,
     KALSHI_FEE_RATE,
     RAIN_TARGET_SERIES,
@@ -88,7 +89,10 @@ def run_rain_cycle():
             print(f"  {city_name}: {actual:.2f}\" so far | no ensemble data")
     print()
 
-    bets_placed = 0
+    # ── Phase 1: Evaluate every rain market, log signals, collect bet candidates ──
+    # Note: rain markets use raw probabilities — no calibration applied yet because
+    # we have zero settled rain trades. Add a separate calibration once data is in.
+    bet_candidates = []
 
     for market in actionable:
         city      = market["city"]
@@ -141,6 +145,42 @@ def run_rain_cycle():
             continue
 
         active_edge = edge_yes if action == "BET_YES" else edge_no
+        bet_candidates.append({
+            'market':      market,
+            'action':      action,
+            'active_edge': active_edge,
+            'our_prob':    our_prob,
+            'yes_ask':     yes_ask,
+            'no_ask':      no_ask,
+        })
+
+    # ── Phase 2: One bet per city — multiple thresholds on the same city's monthly
+    # rain are correlated outcomes (if Dallas gets 4", then >2", >3" both win) ──
+    if ONE_BET_PER_CITY_DATE:
+        best_by_city = {}
+        for c in bet_candidates:
+            key = c['market']['city']['name']
+            if key not in best_by_city or c['active_edge'] > best_by_city[key]['active_edge']:
+                best_by_city[key] = c
+        skipped = len(bet_candidates) - len(best_by_city)
+        if skipped > 0:
+            print(f"\nCorrelated bet filter: {len(bet_candidates)} candidates → {len(best_by_city)} kept "
+                  f"({skipped} skipped — only the highest-edge bet per city is placed)\n")
+        final_bets = list(best_by_city.values())
+    else:
+        final_bets = bet_candidates
+
+    # ── Phase 3: Place trades ──
+    bets_placed = 0
+    for c in final_bets:
+        market      = c['market']
+        action      = c['action']
+        active_edge = c['active_edge']
+        our_prob    = c['our_prob']
+        yes_ask     = c['yes_ask']
+        no_ask      = c['no_ask']
+        ticker      = market['ticker']
+
         bet_usd = min(kelly_size(active_edge, STARTING_CAPITAL, KELLY_CAP), MAX_TRADE_SIZE_USD)
         bet_usd = max(round(bet_usd), 5)
         side = "yes" if action == "BET_YES" else "no"
@@ -148,14 +188,14 @@ def run_rain_cycle():
         contract_count = min(200, max(1, int((bet_usd * 100) / (price * 100))))
 
         if PAPER_TRADING:
-            print(f"  [PAPER] {action}: {contract_count} contracts @ {price:.2f} (~${bet_usd})\n")
+            print(f"  [PAPER] {ticker} {action}: {contract_count} contracts @ {price:.2f} (~${bet_usd})")
             log_trade(ticker, side, bet_usd, contract_count, price, our_prob, yes_ask,
                       paper_trade=True, gfs_run=gfs_run)
         else:
             price_cents = int(price * 100)
-            print(f"  [LIVE] {action}: {contract_count} contracts @ {price_cents}¢ (~${bet_usd})")
+            print(f"  [LIVE] {ticker} {action}: {contract_count} contracts @ {price_cents}¢ (~${bet_usd})")
             result = client.place_order(ticker, side, contract_count, price_cents)
-            print(f"  Order result: {result}\n")
+            print(f"  Order result: {result}")
             log_trade(ticker, side, bet_usd, contract_count, price, our_prob, yes_ask,
                       paper_trade=False, gfs_run=gfs_run)
 

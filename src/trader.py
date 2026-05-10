@@ -10,6 +10,7 @@ from config import (
     MAX_EDGE_THRESHOLD,
     MAX_NO_BET_YES_PRICE,
     MAX_NO_BET_OUR_PROB,
+    ONE_BET_PER_CITY_DATE,
     FORECAST_HORIZON_DAYS,
     KELLY_CAP,
     KALSHI_FEE_RATE,
@@ -17,7 +18,7 @@ from config import (
 )
 from kalshi_client import KalshiClient
 from market_parser import parse_market
-from model import kelly_size
+from model import kelly_size, calibrate_probability
 from weather import get_ensemble_temps, probability_above, probability_below, probability_between
 from database import log_signal, log_trade, get_daily_realized_loss, get_open_tickers
 from settler import settle_trades
@@ -109,7 +110,8 @@ def run_cycle():
             print(f"  {city_name} {target_date}: no data")
     print()
 
-    bets_placed = 0
+    # ── Phase 1: Evaluate every market, log signals, collect bet candidates ──
+    bet_candidates = []
 
     for market in actionable:
         city        = market["city"]
@@ -142,17 +144,21 @@ def run_cycle():
             print("  Skipping — no forecast data.\n")
             continue
 
-        our_prob = _estimate(temps, direction, threshold_f, low_f, high_f)
-        if our_prob is None:
+        raw_prob = _estimate(temps, direction, threshold_f, low_f, high_f)
+        if raw_prob is None:
             print("  Skipping — probability estimate failed.\n")
             continue
+
+        # Apply calibration: GFS-derived probabilities are systematically miscalibrated.
+        # We log both raw and calibrated for transparency; downstream uses calibrated.
+        our_prob = calibrate_probability(raw_prob)
 
         yes_fee  = KALSHI_FEE_RATE * (1 - yes_ask)
         no_fee   = KALSHI_FEE_RATE * (1 - no_ask)
         edge_yes = our_prob - yes_ask - yes_fee
         edge_no  = (1 - our_prob) - no_ask - no_fee
 
-        print(f"  Our prob: {our_prob:.2f} | Edge YES: {edge_yes:+.2f}  Edge NO: {edge_no:+.2f}")
+        print(f"  Our prob: raw {raw_prob:.2f} → calibrated {our_prob:.2f} | Edge YES: {edge_yes:+.2f}  Edge NO: {edge_no:+.2f}")
 
         if edge_yes > MAX_EDGE_THRESHOLD or edge_no > MAX_EDGE_THRESHOLD:
             action = "SUSPICIOUS_EDGE"
@@ -182,6 +188,44 @@ def run_cycle():
             continue
 
         active_edge = edge_yes if action == "BET_YES" else edge_no
+        bet_candidates.append({
+            'market':      market,
+            'action':      action,
+            'active_edge': active_edge,
+            'our_prob':    our_prob,
+            'yes_ask':     yes_ask,
+            'no_ask':      no_ask,
+        })
+
+    # ── Phase 2: Filter to one bet per (city, target_date) — highest edge wins ──
+    # Multiple contracts on the same city+date resolve based on the same underlying
+    # outcome (the day's high temperature), so they're correlated. Picking the single
+    # highest-edge contract reduces variance without sacrificing expected value.
+    if ONE_BET_PER_CITY_DATE:
+        best_by_group = {}
+        for c in bet_candidates:
+            key = (c['market']['city']['name'], c['market']['target_date'])
+            if key not in best_by_group or c['active_edge'] > best_by_group[key]['active_edge']:
+                best_by_group[key] = c
+        skipped = len(bet_candidates) - len(best_by_group)
+        if skipped > 0:
+            print(f"\nCorrelated bet filter: {len(bet_candidates)} candidates → {len(best_by_group)} kept "
+                  f"({skipped} skipped — only the highest-edge bet per (city, date) is placed)\n")
+        final_bets = list(best_by_group.values())
+    else:
+        final_bets = bet_candidates
+
+    # ── Phase 3: Place trades ──
+    bets_placed = 0
+    for c in final_bets:
+        market      = c['market']
+        action      = c['action']
+        active_edge = c['active_edge']
+        our_prob    = c['our_prob']
+        yes_ask     = c['yes_ask']
+        no_ask      = c['no_ask']
+        ticker      = market['ticker']
+
         bet_usd = min(kelly_size(active_edge, STARTING_CAPITAL, KELLY_CAP), MAX_TRADE_SIZE_USD)
         bet_usd = max(round(bet_usd), 5)
         side = "yes" if action == "BET_YES" else "no"
@@ -189,13 +233,13 @@ def run_cycle():
         contract_count = min(200, max(1, int((bet_usd * 100) / (price * 100))))
 
         if PAPER_TRADING:
-            print(f"  [PAPER] {action}: {contract_count} contracts @ {price:.2f} (~${bet_usd})\n")
+            print(f"  [PAPER] {ticker} {action}: {contract_count} contracts @ {price:.2f} (~${bet_usd})")
             log_trade(ticker, side, bet_usd, contract_count, price, our_prob, yes_ask, paper_trade=True, gfs_run=gfs_run)
         else:
             price_cents = int(price * 100)
-            print(f"  [LIVE] {action}: {contract_count} contracts @ {price_cents}¢ (~${bet_usd})")
+            print(f"  [LIVE] {ticker} {action}: {contract_count} contracts @ {price_cents}¢ (~${bet_usd})")
             result = client.place_order(ticker, side, contract_count, price_cents)
-            print(f"  Order result: {result}\n")
+            print(f"  Order result: {result}")
             log_trade(ticker, side, bet_usd, contract_count, price, our_prob, yes_ask, paper_trade=False, gfs_run=gfs_run)
 
         bets_placed += 1
