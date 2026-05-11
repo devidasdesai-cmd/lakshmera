@@ -14,7 +14,8 @@ DAILY_LOSS_LIMIT_USD = 150  # Bot shuts down for the day if hit
 MIN_EDGE_THRESHOLD = 0.05   # Minimum 5% edge required to place any bet
 MAX_EDGE_THRESHOLD = 0.55   # Edge above this is likely a model bias artifact — log but don't bet
 MAX_NO_BET_YES_PRICE = 0.20 # Don't bet NO when market prices YES above this — 20-30% range lost -$246 in data
-MAX_NO_BET_OUR_PROB = 0.12  # Don't bet NO when our model gives YES >12% — above this lost -$816 across 338 trades
+# (Removed MAX_NO_BET_OUR_PROB: calibration now corrects model overconfidence at the source,
+#  so the redundant safety rule was blocking our best-performing NO bet category.)
 
 # --- Probability calibration ---
 # Raw GFS-derived probabilities are systematically miscalibrated. From 338 settled trades:
