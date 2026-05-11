@@ -2,9 +2,13 @@ name: Lakshmera Weather Bot
 
 on:
   schedule:
-    # Runs 4 hours after each GFS model update (00z/06z/12z/18z UTC)
-    # GFS data takes ~3-4 hours to process — this catches fresh data each cycle
-    - cron: "0 4,10,16,22 * * *"
+    # Trading runs only — the 04 UTC (00z) and 10 UTC (06z) runs were removed
+    # because Kalshi doesn't open next-day contracts until ~13 UTC, so they
+    # produced zero signals. Schedule now:
+    #   14 UTC = ~10am ET, catches contracts right as Kalshi opens them
+    #   16 UTC = 12z run, primary trading run
+    #   22 UTC = 18z run, picks up 2+ days-out contracts
+    - cron: "0 14,16,22 * * *"
   workflow_dispatch: # Allows manual trigger from GitHub Actions tab
 
 jobs:
