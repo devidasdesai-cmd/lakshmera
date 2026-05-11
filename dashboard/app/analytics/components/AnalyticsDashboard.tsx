@@ -21,9 +21,25 @@ interface ET {
   pnl:           number
   amount:        number
   won:           boolean
+  runLabel:      string  // e.g., "12z (11am CT)", "18z (5pm CT)", "Legacy (untagged)"
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function runLabelFor(gfsRun: string | null): string {
+  if (!gfsRun) return 'Legacy (untagged)'
+  // Rain markets get a "rain_" prefix on the gfs_run field
+  const isRain = gfsRun.startsWith('rain_')
+  const cycle  = isRain ? gfsRun.slice(5) : gfsRun
+  const cycleLabel: Record<string, string> = {
+    '00z': '00z (11pm CT prev day)',
+    '06z': '06z (~9am CT)',
+    '12z': '12z (~11am CT)',
+    '18z': '18z (~5pm CT)',
+  }
+  const label = cycleLabel[cycle] ?? cycle
+  return isRain ? `Rain · ${label}` : label
+}
 
 function enrich(t: Trade): ET {
   const { city, typeCode, targetDateStr, targetDate } = parseTicker(t.ticker)
@@ -41,7 +57,8 @@ function enrich(t: Trade): ET {
       ))
     : 0
   const typeLabel = typeCode.startsWith('B') ? 'Bucket' : 'Tail'
-  return { city, side: t.side, typeLabel, targetDateStr, placedDate, leadDays, ourProb, mktProb, edge, pnl, amount, won }
+  const runLabel  = runLabelFor(t.gfs_run)
+  return { city, side: t.side, typeLabel, targetDateStr, placedDate, leadDays, ourProb, mktProb, edge, pnl, amount, won, runLabel }
 }
 
 function agg(ts: ET[]) {
@@ -203,6 +220,24 @@ export default function AnalyticsDashboard({ trades }: Props) {
     return Array.from(grouped.entries())
       .map(([label, ts]) => ({ label, ...agg(ts) }))
       .sort((a, b) => b.count - a.count)
+  }, [data])
+
+  // 4b — By GFS Run (which cron cycle placed the bet)
+  const byRun = useMemo(() => {
+    const grouped = groupBy(data, t => t.runLabel)
+    // Sort by canonical run order: 00z, 06z, 12z, 18z, then Rain variants, then Legacy
+    const runOrder = (label: string): number => {
+      if (label.startsWith('Legacy')) return 99
+      if (label.startsWith('Rain')) return 50 + (label.includes('00z') ? 0 : label.includes('06z') ? 1 : label.includes('12z') ? 2 : 3)
+      if (label.startsWith('00z')) return 0
+      if (label.startsWith('06z')) return 1
+      if (label.startsWith('12z')) return 2
+      if (label.startsWith('18z')) return 3
+      return 100
+    }
+    return Array.from(grouped.entries())
+      .map(([label, ts]) => ({ label, ...agg(ts) }))
+      .sort((a, b) => runOrder(a.label) - runOrder(b.label))
   }, [data])
 
   // 5 — Edge vs Outcome
@@ -396,6 +431,39 @@ export default function AnalyticsDashboard({ trades }: Props) {
           </table>
         </AnalyticsSection>
       </div>
+
+      {/* 4b — By GFS Run / Cron Cycle */}
+      <AnalyticsSection title="Performance by Bot Run (GFS Cycle)">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-gray-200 dark:border-gray-800">
+              <Th>Run</Th><Th>Trades</Th><Th>W / L</Th><Th>Win Rate</Th><Th>P&L</Th><Th>Capital</Th><Th>Return</Th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-200 dark:divide-gray-800/60">
+            {byRun.map(r => {
+              const ret = r.capital > 0 ? (r.pnl / r.capital) * 100 : null
+              return (
+                <tr key={r.label} className="hover:bg-gray-50 dark:hover:bg-gray-800/40 transition-colors">
+                  <Td><span className="font-mono text-xs">{r.label}</span></Td>
+                  <Td>{r.count}</Td>
+                  <Td>{r.wins}W · {r.losses}L</Td>
+                  <Td><WinBar wins={r.wins} total={r.count} /></Td>
+                  <Td><Pnl value={r.pnl} /></Td>
+                  <Td><span className="tabular-nums text-gray-500">{currency(r.capital)}</span></Td>
+                  <Td>
+                    {ret === null ? '—' : (
+                      <span className={`tabular-nums font-medium ${ret >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                        {ret >= 0 ? '+' : ''}{ret.toFixed(1)}%
+                      </span>
+                    )}
+                  </Td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </AnalyticsSection>
 
       {/* 5 — Edge vs Outcome */}
       <AnalyticsSection title="Edge vs Outcome">

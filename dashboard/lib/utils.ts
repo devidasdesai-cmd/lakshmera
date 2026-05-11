@@ -12,6 +12,7 @@ export interface Trade {
   result: string | null
   pnl: string | null
   created_at: string
+  gfs_run: string | null
 }
 
 export interface Signal {
