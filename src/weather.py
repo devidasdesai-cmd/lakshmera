@@ -2,32 +2,28 @@ from __future__ import annotations
 import math
 import time
 import requests
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 
 ENSEMBLE_URL = "https://ensemble-api.open-meteo.com/v1/ensemble"
 HISTORICAL_FORECAST_URL = "https://historical-forecast-api.open-meteo.com/v1/forecast"
 ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
+NWS_API_BASE = "https://api.weather.gov"
+NWS_HEADERS = {"User-Agent": "Lakshmera-weather-bot (devidas.desai@gmail.com)"}
 
 
-def get_ensemble_temps(lat: float, lon: float, target_date: date, tz: str) -> list[float]:
-    """
-    Fetch GFS ensemble daily max temperatures for a location on a specific date.
-    Returns a list of temperatures (one per ensemble member) in Fahrenheit.
-    Returns an empty list on failure so callers can skip gracefully.
-    Retries up to 2 times with backoff before giving up.
-    """
+def _fetch_ensemble(lat: float, lon: float, target_date: date, tz: str, model: str) -> list[float]:
+    """Internal: fetch a single model's ensemble daily max temps for one date."""
     params = {
         "latitude": lat,
         "longitude": lon,
         "daily": "temperature_2m_max",
-        "models": "gfs_seamless",
+        "models": model,
         "start_date": target_date.isoformat(),
         "end_date": target_date.isoformat(),
         "temperature_unit": "fahrenheit",
         "timezone": tz,
     }
-
     for attempt in range(3):
         try:
             resp = requests.get(ENSEMBLE_URL, params=params, timeout=60)
@@ -41,14 +37,145 @@ def get_ensemble_temps(lat: float, lon: float, target_date: date, tz: str) -> li
         except requests.exceptions.Timeout:
             if attempt < 2:
                 wait = 10 * (attempt + 1)
-                print(f"  Open-Meteo timeout (attempt {attempt+1}/3), retrying in {wait}s...")
+                print(f"  Open-Meteo {model} timeout (attempt {attempt+1}/3), retrying in {wait}s...")
                 time.sleep(wait)
             else:
-                print(f"  Open-Meteo timeout after 3 attempts — skipping.")
+                print(f"  Open-Meteo {model} timeout after 3 attempts — skipping this model.")
                 return []
         except Exception as e:
-            print(f"  Open-Meteo error: {e} — skipping.")
+            print(f"  Open-Meteo {model} error: {e} — skipping this model.")
             return []
+
+
+def get_ensemble_temps(lat: float, lon: float, target_date: date, tz: str) -> list[float]:
+    """
+    Fetch GFS-only ensemble. Preserved for backward compatibility with rain_trader.py
+    and any other caller that wants pure GFS.
+    """
+    return _fetch_ensemble(lat, lon, target_date, tz, "gfs_seamless")
+
+
+def get_blended_ensemble_temps(lat: float, lon: float, target_date: date, tz: str) -> list[float]:
+    """
+    Fetch GFS + ECMWF ensembles together and return as a combined list.
+    ECMWF is generally regarded as the most skillful global model; GFS is a useful
+    independent signal. Combining gives ~80 effective members vs. ~31 from GFS alone.
+    Falls back gracefully if either model fails.
+    """
+    gfs   = _fetch_ensemble(lat, lon, target_date, tz, "gfs_seamless")
+    ecmwf = _fetch_ensemble(lat, lon, target_date, tz, "ecmwf_ifs025")
+    combined = gfs + ecmwf
+    if gfs and ecmwf:
+        print(f"  Ensemble blend: GFS {len(gfs)} members + ECMWF {len(ecmwf)} members = {len(combined)} total")
+    elif gfs:
+        print(f"  Ensemble blend: GFS {len(gfs)} members (ECMWF unavailable)")
+    elif ecmwf:
+        print(f"  Ensemble blend: ECMWF {len(ecmwf)} members (GFS unavailable)")
+    return combined
+
+
+# Module-level cache so climatology and NWS forecast aren't re-fetched within a single run
+_climatology_cache: dict[tuple, list[float]] = {}
+_nws_forecast_cache: dict[tuple, dict[date, float]] = {}
+
+
+def get_climatology_temps(lat: float, lon: float, target_date: date, tz: str,
+                          years_back: int = 5, window_days: int = 7) -> list[float]:
+    """
+    Return historical daily-max temperatures for the same day-of-year (±window_days),
+    across the last `years_back` years. Used for city/seasonal base rates.
+    Cached per (lat, lon, target_date) within a single process so multiple thresholds
+    on the same (city, date) only fetch once.
+    """
+    key = (round(lat, 4), round(lon, 4), target_date)
+    if key in _climatology_cache:
+        return _climatology_cache[key]
+
+    all_temps: list[float] = []
+    today = date.today()
+    for y in range(today.year - years_back, today.year):
+        try:
+            center = date(y, target_date.month, target_date.day)
+        except ValueError:
+            continue  # e.g., Feb 29 in non-leap year
+        ws = center - timedelta(days=window_days)
+        we = center + timedelta(days=window_days)
+        params = {
+            "latitude": lat, "longitude": lon,
+            "daily": "temperature_2m_max",
+            "start_date": ws.isoformat(), "end_date": we.isoformat(),
+            "temperature_unit": "fahrenheit", "timezone": tz,
+        }
+        try:
+            resp = requests.get(ARCHIVE_URL, params=params, timeout=30)
+            resp.raise_for_status()
+            temps = resp.json().get("daily", {}).get("temperature_2m_max", [])
+            all_temps.extend(t for t in temps if t is not None)
+        except Exception as e:
+            print(f"  Climatology fetch error for {y}: {e}")
+            continue
+
+    _climatology_cache[key] = all_temps
+    return all_temps
+
+
+def climatology_base_rate(climatology: list[float], threshold_f: float, direction: str,
+                          low_f: float = None, high_f: float = None) -> float | None:
+    """
+    Compute the historical exceedance rate for a given contract criterion.
+    Returns None if climatology is empty.
+    """
+    if not climatology:
+        return None
+    n = len(climatology)
+    if direction == "above":
+        return sum(1 for t in climatology if t > threshold_f) / n
+    elif direction == "below":
+        return sum(1 for t in climatology if t < threshold_f) / n
+    elif direction == "bucket" and low_f is not None and high_f is not None:
+        return sum(1 for t in climatology if low_f <= t < high_f) / n
+    return None
+
+
+def get_nws_forecast_temps(lat: float, lon: float) -> dict[date, float]:
+    """
+    Fetch the local National Weather Service forecast (which is based on NBM +
+    local forecaster expertise — i.e., the "official" US prediction).
+    Returns {date: max_temp_f, ...} for the next ~7 days, or {} on failure.
+
+    Two-step API: first resolve lat/lon to a forecast grid, then pull the forecast.
+    Cached per (lat, lon) for the lifetime of the process.
+    """
+    key = (round(lat, 4), round(lon, 4))
+    if key in _nws_forecast_cache:
+        return _nws_forecast_cache[key]
+
+    try:
+        # Step 1: lat/lon → grid
+        url = f"{NWS_API_BASE}/points/{lat:.4f},{lon:.4f}"
+        resp = requests.get(url, headers=NWS_HEADERS, timeout=10)
+        resp.raise_for_status()
+        forecast_url = resp.json()["properties"]["forecast"]
+
+        # Step 2: pull periods
+        resp = requests.get(forecast_url, headers=NWS_HEADERS, timeout=10)
+        resp.raise_for_status()
+        periods = resp.json()["properties"]["periods"]
+
+        out: dict[date, float] = {}
+        for p in periods:
+            if not p.get("isDaytime", False):
+                continue
+            iso = p["startTime"].replace("Z", "+00:00")
+            d = datetime.fromisoformat(iso).date()
+            out[d] = float(p["temperature"])
+
+        _nws_forecast_cache[key] = out
+        return out
+    except Exception as e:
+        print(f"  NWS forecast error: {e}")
+        _nws_forecast_cache[key] = {}
+        return {}
 
 
 def probability_above(temps: list[float], threshold_f: float) -> float | None:

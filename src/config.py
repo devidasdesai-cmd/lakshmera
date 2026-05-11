@@ -24,13 +24,30 @@ MAX_NO_BET_YES_PRICE = 0.20 # Don't bet NO when market prices YES above this —
 # rate corrects for this before computing edge.
 # Set CALIBRATION_ALPHA = 1.0 to disable (no shrinkage, raw probabilities used directly).
 CALIBRATION_ALPHA = 0.5
-TEMPERATURE_BASE_RATE = 0.25
+TEMPERATURE_BASE_RATE = 0.25  # used when city-specific climatology is unavailable
 
 # --- Correlated bet management ---
 # Bot was placing 3-6 bets per (city, date) on the same underlying outcome (the day's high
 # temperature), which compounds variance without adding edge. Cap at one bet per (city, date)
 # — the highest-edge contract wins.
 ONE_BET_PER_CITY_DATE = True
+
+# --- Multi-source forecast data (added 2026-05-10) ---
+# ECMWF ensemble blend: combines GFS + ECMWF ensembles into one ~80-member super-ensemble.
+# ECMWF is generally considered the most skillful global model.
+USE_ECMWF_BLEND = True
+
+# Climatology base rate: use 5 years of historical actuals (±7 days, same day-of-year) as
+# the city-specific base rate for calibration, instead of a flat 0.25.
+USE_CLIMATOLOGY_BASE_RATE = True
+
+# NWS forecast logging: pull NWS local forecast (NBM-derived) and log it alongside our
+# prediction for sanity checking. Currently informational only; not used in betting math.
+LOG_NWS_FORECAST = True
+
+# Kalshi order book logging: fetch liquidity at the ask before each paper bet. Logged for
+# diagnostic purposes; in live trading we'd use this to adjust fill expectations.
+LOG_ORDERBOOK = True
 
 # --- Kalshi API ---
 KALSHI_API_KEY_ID = os.environ["KALSHI_API_KEY_ID"]

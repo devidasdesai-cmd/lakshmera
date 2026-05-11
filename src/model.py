@@ -46,16 +46,19 @@ def kelly_size(edge: float, capital: float, kelly_cap: float) -> float:
     return min(edge, kelly_cap) * capital
 
 
-def calibrate_probability(raw_prob: float) -> float:
+def calibrate_probability(raw_prob: float, base_rate: float = None) -> float:
     """
-    Shrink raw GFS-derived probability toward the empirical base rate.
+    Shrink raw GFS-derived probability toward a base rate.
 
-    Our raw model is overconfident at extremes. When we predict 0-5% YES,
-    actual outcome is ~22%. When we predict 70%+, actual is ~25%. The market
-    is well-calibrated; our model is not. This correction brings predictions
-    closer to reality before computing edge.
+    When the model is overconfident at extremes (e.g., raw says 0-5% YES but the
+    actual outcome rate is ~22%), shrinkage toward the base rate corrects for it.
 
-    Set CALIBRATION_ALPHA = 1.0 in config to disable.
+    If `base_rate` is provided (from climatology), it's used instead of the static
+    TEMPERATURE_BASE_RATE — this gives city- and date-specific calibration anchors
+    rather than a single global rate.
+
+    Set CALIBRATION_ALPHA = 1.0 in config to disable shrinkage entirely.
     """
     from config import CALIBRATION_ALPHA, TEMPERATURE_BASE_RATE
-    return CALIBRATION_ALPHA * raw_prob + (1 - CALIBRATION_ALPHA) * TEMPERATURE_BASE_RATE
+    anchor = base_rate if base_rate is not None else TEMPERATURE_BASE_RATE
+    return CALIBRATION_ALPHA * raw_prob + (1 - CALIBRATION_ALPHA) * anchor

@@ -10,6 +10,10 @@ from config import (
     MAX_EDGE_THRESHOLD,
     MAX_NO_BET_YES_PRICE,
     ONE_BET_PER_CITY_DATE,
+    USE_ECMWF_BLEND,
+    USE_CLIMATOLOGY_BASE_RATE,
+    LOG_NWS_FORECAST,
+    LOG_ORDERBOOK,
     FORECAST_HORIZON_DAYS,
     KELLY_CAP,
     KALSHI_FEE_RATE,
@@ -18,7 +22,12 @@ from config import (
 from kalshi_client import KalshiClient
 from market_parser import parse_market
 from model import kelly_size, calibrate_probability
-from weather import get_ensemble_temps, probability_above, probability_below, probability_between
+from weather import (
+    get_ensemble_temps, get_blended_ensemble_temps,
+    get_climatology_temps, climatology_base_rate,
+    get_nws_forecast_temps,
+    probability_above, probability_below, probability_between,
+)
 from database import log_signal, log_trade, get_daily_realized_loss, get_open_tickers
 from settler import settle_trades
 
@@ -97,9 +106,13 @@ def run_cycle():
     # and prevents timeouts when many contracts share the same city+date.
     print("Pre-fetching ensemble forecast data...")
     ensemble_cache: dict[tuple, list[float]] = {}
+    nws_cache:      dict[str, dict] = {}   # city_name → {date: forecast_temp}
     city_dates = {(m["city"]["name"], m["target_date"]): m["city"] for m in actionable}
     for (city_name, target_date), city in city_dates.items():
-        temps = get_ensemble_temps(city["lat"], city["lon"], target_date, city["tz"])
+        if USE_ECMWF_BLEND:
+            temps = get_blended_ensemble_temps(city["lat"], city["lon"], target_date, city["tz"])
+        else:
+            temps = get_ensemble_temps(city["lat"], city["lon"], target_date, city["tz"])
         ensemble_cache[(city_name, target_date)] = temps
         if temps:
             mean = sum(temps) / len(temps)
@@ -107,6 +120,20 @@ def run_cycle():
                   f"mean={mean:.1f}°F min={min(temps):.1f}°F max={max(temps):.1f}°F")
         else:
             print(f"  {city_name} {target_date}: no data")
+
+    # Pre-fetch NWS forecasts (one call per city; covers all dates in the forecast horizon).
+    if LOG_NWS_FORECAST:
+        print("\nPre-fetching NWS local forecasts (NBM-derived)...")
+        seen_cities = {m["city"]["name"]: m["city"] for m in actionable}
+        for city_name, city in seen_cities.items():
+            nws_cache[city_name] = get_nws_forecast_temps(city["lat"], city["lon"])
+            if nws_cache[city_name]:
+                # Show a short summary of upcoming forecast for this city
+                upcoming = sorted(nws_cache[city_name].items())[:4]
+                summary = ", ".join(f"{d.strftime('%m/%d')}:{t:.0f}°F" for d, t in upcoming)
+                print(f"  {city_name}: {summary}")
+            else:
+                print(f"  {city_name}: NWS forecast unavailable")
     print()
 
     # ── Phase 1: Evaluate every market, log signals, collect bet candidates ──
@@ -148,9 +175,28 @@ def run_cycle():
             print("  Skipping — probability estimate failed.\n")
             continue
 
-        # Apply calibration: GFS-derived probabilities are systematically miscalibrated.
-        # We log both raw and calibrated for transparency; downstream uses calibrated.
-        our_prob = calibrate_probability(raw_prob)
+        # Climatology base rate: city- and date-specific historical exceedance rate, used
+        # as the shrinkage anchor for calibration. Falls back to global default if unavailable.
+        base_rate = None
+        if USE_CLIMATOLOGY_BASE_RATE:
+            clim_temps = get_climatology_temps(city["lat"], city["lon"], target_date, city["tz"])
+            base_rate = climatology_base_rate(clim_temps, threshold_f, direction, low_f, high_f)
+            if base_rate is not None:
+                print(f"  Climatology base rate: {base_rate*100:.0f}% (from {len(clim_temps)} historical days)")
+
+        our_prob = calibrate_probability(raw_prob, base_rate=base_rate)
+
+        # NWS forecast sanity check (informational; not used in math)
+        if LOG_NWS_FORECAST:
+            nws_forecasts = nws_cache.get(city["name"], {})
+            nws_temp = nws_forecasts.get(target_date)
+            if nws_temp is not None:
+                # Mean of our blended ensemble for comparison
+                model_mean = sum(temps) / len(temps) if temps else None
+                if model_mean is not None:
+                    diff = nws_temp - model_mean
+                    flag = " ⚠" if abs(diff) >= 4 else ""
+                    print(f"  NWS forecast: {nws_temp:.0f}°F vs our model mean {model_mean:.1f}°F (diff {diff:+.1f}°F){flag}")
 
         yes_fee  = KALSHI_FEE_RATE * (1 - yes_ask)
         no_fee   = KALSHI_FEE_RATE * (1 - no_ask)
@@ -227,6 +273,23 @@ def run_cycle():
         side = "yes" if action == "BET_YES" else "no"
         price = yes_ask if side == "yes" else no_ask
         contract_count = min(200, max(1, int((bet_usd * 100) / (price * 100))))
+
+        # Diagnostic: log Kalshi order book depth at the ask. In paper mode this is
+        # informational only — for live trading we'd use this to verify our bet size
+        # is fillable at the quoted price.
+        if LOG_ORDERBOOK:
+            try:
+                ask_price, available = client.get_liquidity_at_ask(ticker, side)
+                if ask_price is not None:
+                    fillable = "✓" if available >= contract_count else "⚠ partial"
+                    slippage = ask_price - price
+                    slip_note = f", slippage {slippage:+.3f}" if abs(slippage) > 0.001 else ""
+                    print(f"  Order book: best ask ${ask_price:.3f}, {int(available)} contracts available "
+                          f"({fillable} for our {contract_count}{slip_note})")
+                else:
+                    print(f"  Order book: no liquidity on {side.upper()} side")
+            except Exception as e:
+                print(f"  Order book lookup failed: {e}")
 
         if PAPER_TRADING:
             print(f"  [PAPER] {ticker} {action}: {contract_count} contracts @ {price:.2f} (~${bet_usd})")

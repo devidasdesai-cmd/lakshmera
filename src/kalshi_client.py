@@ -157,6 +157,38 @@ class KalshiClient:
     def get_market(self, ticker: str) -> dict:
         return self._get(f"/markets/{ticker}").get("market", {})
 
+    def get_orderbook(self, ticker: str) -> dict:
+        """
+        Fetch the order book for a market. Kalshi returns:
+          { "orderbook_fp": { "yes_dollars": [["0.45", "100.00"], ...],
+                              "no_dollars":  [["0.55", "50.00"],  ...] } }
+        Each entry is [price_in_dollars_as_string, contract_count_as_string], sorted
+        ascending by price. Returns the inner orderbook_fp dict, or {} on failure.
+        """
+        try:
+            resp = self._get(f"/markets/{ticker}/orderbook")
+            return resp.get("orderbook_fp") or resp.get("orderbook") or {}
+        except Exception as e:
+            print(f"  Orderbook fetch failed for {ticker}: {e}")
+            return {}
+
+    def get_liquidity_at_ask(self, ticker: str, side: str) -> tuple[float, float]:
+        """
+        Returns (best_ask_price_dollars, contracts_available_at_that_price) for buying
+        the given side. Returns (None, 0) if there's no liquidity. The ask for buying YES
+        is derived from NO bids: ask_yes = 1.00 - highest_no_bid.
+        """
+        ob = self.get_orderbook(ticker)
+        opposing_key = "no_dollars" if side == "yes" else "yes_dollars"
+        bids = ob.get(opposing_key) or []
+        if not bids:
+            return (None, 0)
+        # Highest bid on the opposing side determines the best ask price for our side.
+        # Bids are sorted ascending, so the last entry is the highest.
+        best_price, best_count = bids[-1]
+        ask_price = round(1.0 - float(best_price), 4)
+        return (ask_price, float(best_count))
+
     def place_order(self, ticker: str, side: str, count: int, limit_price: int) -> dict:
         payload = {
             "ticker":      ticker,
