@@ -23,7 +23,10 @@ MAX_NO_BET_YES_PRICE = 0.20 # Don't bet NO when market prices YES above this —
 # The market is well-calibrated; our model is not. Shrinking toward the empirical base
 # rate corrects for this before computing edge.
 # Set CALIBRATION_ALPHA = 1.0 to disable (no shrinkage, raw probabilities used directly).
-CALIBRATION_ALPHA = 0.5
+CALIBRATION_ALPHA = 0.7      # Raised from 0.5 — trusts current forecast more, climatology
+                             # less. Avoids over-correcting on genuine weather anomalies
+                             # (e.g., heat waves) where historical norms misleadingly pull
+                             # predictions back toward typical days.
 TEMPERATURE_BASE_RATE = 0.25  # used when city-specific climatology is unavailable
 
 # --- Correlated bet management ---
@@ -95,7 +98,8 @@ SERIES_TO_CITY = {
     "KXHIGHLAX":   "Los Angeles",
     "KXHIGHTPHX":  "Phoenix",
     "KXHIGHTDC":   "DC",
-    # "KXHIGHTLV": "Las Vegas",  # Disabled — consistent -$362 loss, GFS warm bias in desert heat
+    "KXHIGHTLV":   "Las Vegas",  # Re-enabled 2026-05-10 to see if calibration+climatology
+                                  # correct for the previous warm-bias losses
     "KXHIGHTSEA":  "Seattle",
     "KXHIGHTSATX": "San Antonio",
     "KXHIGHTSFO":  "San Francisco",
