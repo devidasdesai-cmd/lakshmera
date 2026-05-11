@@ -14,7 +14,9 @@ on:
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 25-minute cap (was 10). Multi-source forecast pipeline (GFS + ECMWF + climatology
+    # + NWS + orderbook) makes many API calls; 10 min was hitting the wall mid-evaluation.
+    timeout-minutes: 25
 
     steps:
       - name: Checkout code

@@ -29,7 +29,7 @@ from weather import (
     probability_above, probability_below, probability_between,
 )
 from database import log_signal, log_trade, get_daily_realized_loss, get_open_tickers
-from settler import settle_trades
+# settle_trades is now called upfront from main.py
 
 
 def _estimate(temps, direction, threshold_f, low_f, high_f):
@@ -304,6 +304,5 @@ def run_cycle():
         bets_placed += 1
 
     print(f"\nCycle complete. Bets placed (or paper logged): {bets_placed}")
-
-    # Check whether any previously placed bets have now settled
-    settle_trades()
+    # Note: settlement now runs upfront in main.py so it completes even if
+    # this trading phase is killed by a runner timeout.

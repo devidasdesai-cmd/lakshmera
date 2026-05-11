@@ -20,7 +20,7 @@ from rain_parser import parse_rain_market
 from model import kelly_size
 from weather import get_monthly_actual_precip, get_ensemble_precip_remaining, probability_precip_above
 from database import log_signal, log_trade, get_open_tickers
-from settler import settle_trades
+# settle_trades is now called upfront from main.py
 
 
 def _current_gfs_run() -> str:
@@ -198,4 +198,4 @@ def run_rain_cycle():
         bets_placed += 1
 
     print(f"\nRain cycle complete. Bets placed: {bets_placed}")
-    settle_trades()
+    # Note: settlement runs upfront in main.py (covers both temp and rain trades).
