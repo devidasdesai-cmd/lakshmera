@@ -53,22 +53,42 @@ def run_rain_cycle():
 
     print(f"Rain markets fetched: {len(raw_markets)}")
 
+    # Cities that already have ANY open rain position. We use this to skip the
+    # whole city, not just the specific threshold — otherwise the bot keeps
+    # placing duplicate bets on the same city across runs (one per threshold,
+    # because get_open_tickers only blocks exact ticker matches).
+    open_tickers = get_open_tickers(paper_trade=PAPER_TRADING)
+    cities_with_open_rain = {
+        # ticker format: KXRAINDALM-26MAY-3 → series is KXRAINDALM
+        t.split('-')[0]
+        for t in open_tickers
+        if t.startswith('KXRAIN')
+    }
+    if cities_with_open_rain:
+        print(f"Already holding rain position in {len(cities_with_open_rain)} cities — will skip those entirely.")
+        print(f"  {sorted(cities_with_open_rain)}")
+
     actionable = []
+    skipped_city_covered = 0
     for m in raw_markets:
         parsed = parse_rain_market(m)
         if parsed is None:
             continue
         if parsed["year"] != today.year or parsed["month"] != today.month:
             continue
+        # Skip entire cities that already have an open rain bet
+        series = parsed["ticker"].split('-')[0]
+        if series in cities_with_open_rain:
+            skipped_city_covered += 1
+            continue
         actionable.append(parsed)
 
-    print(f"Actionable rain markets this month: {len(actionable)}\n")
+    print(f"Actionable rain markets this month: {len(actionable)} "
+          f"({skipped_city_covered} skipped — city already covered)\n")
 
     if not actionable:
         print("No actionable rain markets found.")
         return
-
-    open_tickers = get_open_tickers(paper_trade=PAPER_TRADING)
 
     # Pre-fetch precipitation data once per city
     print("Pre-fetching precipitation data...")
