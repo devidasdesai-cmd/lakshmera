@@ -19,7 +19,7 @@ from kalshi_client import KalshiClient
 from rain_parser import parse_rain_market
 from model import kelly_size
 from weather import get_monthly_actual_precip, get_ensemble_precip_remaining, probability_precip_above
-from database import log_signal, log_trade, get_open_tickers
+from database import log_signal, log_trade, get_open_tickers, get_rain_cities_bet_today
 # settle_trades is now called upfront from main.py
 
 
@@ -53,38 +53,38 @@ def run_rain_cycle():
 
     print(f"Rain markets fetched: {len(raw_markets)}")
 
-    # Cities that already have ANY open rain position. We use this to skip the
-    # whole city, not just the specific threshold — otherwise the bot keeps
-    # placing duplicate bets on the same city across runs (one per threshold,
-    # because get_open_tickers only blocks exact ticker matches).
     open_tickers = get_open_tickers(paper_trade=PAPER_TRADING)
-    cities_with_open_rain = {
-        # ticker format: KXRAINDALM-26MAY-3 → series is KXRAINDALM
-        t.split('-')[0]
-        for t in open_tickers
-        if t.startswith('KXRAIN')
-    }
-    if cities_with_open_rain:
-        print(f"Already holding rain position in {len(cities_with_open_rain)} cities — will skip those entirely.")
-        print(f"  {sorted(cities_with_open_rain)}")
+
+    # To prevent multiple bets on the same city within a single day's cron cycles
+    # (the original bug: each run picked the next-best threshold on the same city),
+    # skip cities where we already placed a bet today. But ALLOW new bets on a city
+    # on a different day, since forecasts and actuals genuinely change over a month.
+    cities_bet_today = get_rain_cities_bet_today(paper_trade=PAPER_TRADING)
+    if cities_bet_today:
+        print(f"Already placed a rain bet today on {len(cities_bet_today)} cities — those are skipped: {sorted(cities_bet_today)}")
 
     actionable = []
-    skipped_city_covered = 0
+    skipped_same_day = 0
+    skipped_same_ticker = 0
     for m in raw_markets:
         parsed = parse_rain_market(m)
         if parsed is None:
             continue
         if parsed["year"] != today.year or parsed["month"] != today.month:
             continue
-        # Skip entire cities that already have an open rain bet
+        # Same exact contract already open — always skip
+        if parsed["ticker"] in open_tickers:
+            skipped_same_ticker += 1
+            continue
+        # Different threshold on a city we already bet on today — skip
         series = parsed["ticker"].split('-')[0]
-        if series in cities_with_open_rain:
-            skipped_city_covered += 1
+        if series in cities_bet_today:
+            skipped_same_day += 1
             continue
         actionable.append(parsed)
 
     print(f"Actionable rain markets this month: {len(actionable)} "
-          f"({skipped_city_covered} skipped — city already covered)\n")
+          f"({skipped_same_ticker} already-open, {skipped_same_day} same-day on same city)\n")
 
     if not actionable:
         print("No actionable rain markets found.")

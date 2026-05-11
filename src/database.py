@@ -52,6 +52,32 @@ def get_open_tickers(paper_trade: bool = True) -> set:
     return tickers
 
 
+def get_rain_cities_bet_today(paper_trade: bool = True) -> set:
+    """
+    Return the set of rain series (KXRAIN...) for which we already have an open
+    bet placed today (UTC). Used to prevent the rain bot from stacking multiple
+    bets on the same city within a single day's cron cycles, while still allowing
+    new bets on different days as forecasts evolve.
+    """
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT DISTINCT SPLIT_PART(ticker, '-', 1) AS series
+        FROM trades
+        WHERE settled = FALSE
+          AND paper_trade = %s
+          AND ticker LIKE 'KXRAIN%%'
+          AND DATE(created_at AT TIME ZONE 'UTC') = (NOW() AT TIME ZONE 'UTC')::date
+        """,
+        (paper_trade,)
+    )
+    cities = {row[0] for row in cur.fetchall()}
+    cur.close()
+    conn.close()
+    return cities
+
+
 def get_daily_realized_loss():
     """Sum of losses on settled trades today (real trades only)."""
     conn = get_connection()
