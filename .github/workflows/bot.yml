@@ -2,13 +2,13 @@ name: Lakshmera Weather Bot
 
 on:
   schedule:
-    # Trading runs only. Offsetting by 15 minutes off the top of the hour
-    # reduces the chance of GitHub Actions skipping scheduled runs — top-of-hour
-    # is the busiest slot for the scheduler since most repos default there.
-    #   14:15 UTC = 9:15 AM CT, catches contracts right as Kalshi opens them
-    #   16:15 UTC = 11:15 AM CT, 12z primary trading run (fresh GFS data)
-    #   22:15 UTC = 5:15 PM CT, 18z run for 2+ days-out contracts
-    - cron: "15 14,16,22 * * *"
+    # Trading runs only. Offsetting 16 min past the hour to dodge the busy
+    # top-of-hour and the moderately-popular :15 slot in GitHub Actions' cron
+    # scheduler.
+    #   14:16 UTC = 9:16 AM CT, catches contracts right as Kalshi opens them
+    #   16:16 UTC = 11:16 AM CT, 12z primary trading run (fresh GFS data)
+    #   22:16 UTC = 5:16 PM CT, 18z run for 2+ days-out contracts
+    - cron: "16 14,16,22 * * *"
   workflow_dispatch: # Allows manual trigger from GitHub Actions tab
 
 jobs:
