@@ -2,13 +2,20 @@ name: Lakshmera Weather Bot
 
 on:
   schedule:
-    # Trading runs only. Offsetting 16 min past the hour to dodge the busy
-    # top-of-hour and the moderately-popular :15 slot in GitHub Actions' cron
-    # scheduler.
-    #   14:16 UTC = 9:16 AM CT, catches contracts right as Kalshi opens them
-    #   16:16 UTC = 11:16 AM CT, 12z primary trading run (fresh GFS data)
-    #   22:16 UTC = 5:16 PM CT, 18z run for 2+ days-out contracts
-    - cron: "16 14,16,22 * * *"
+    # Three runs per day, scheduled at :37 past the hour. Prime-number minute
+    # offset avoids the heavily-loaded top-of-hour and the moderately-popular
+    # :15/:30/:45 quarter-hour marks in GitHub Actions' cron scheduler.
+    # Slots chosen to align with NWS settlement publication and GFS data drops:
+    #   15:37 UTC = 10:37 AM CT — most NWS Daily Climate Reports have published
+    #               by 14-15 UTC, so this run reliably catches prior-day
+    #               settlements and places some morning trades on 06z data
+    #   17:37 UTC = 12:37 PM CT — 12z GFS becomes available on Open-Meteo
+    #               around 16 UTC; this run uses fresh 12z data (primary
+    #               trading window)
+    #   22:37 UTC = 5:37 PM CT  — 18z GFS becomes available around 22 UTC;
+    #               this run places 2+ days-out bets on freshly-published
+    #               late-afternoon model data
+    - cron: "37 15,17,22 * * *"
   workflow_dispatch: # Allows manual trigger from GitHub Actions tab
 
 jobs:
