@@ -32,14 +32,17 @@ def _current_gfs_run() -> str:
 def run_rain_cycle():
     today = date.today()
 
-    if today.day > RAIN_MAX_ENTRY_DAY:
-        print(f"\n[RAIN] Day {today.day} of month — past entry cutoff ({RAIN_MAX_ENTRY_DAY}). Skipping rain markets.")
-        return
+    # After day 10 we're in "signals-only" mode: still evaluate markets and log
+    # what we *would* have bet, but skip the actual trade placement. This gives
+    # us data to retrospectively analyze whether late-month rain bets would
+    # have been profitable, so we can revisit RAIN_MAX_ENTRY_DAY in the future.
+    past_entry_cutoff = today.day > RAIN_MAX_ENTRY_DAY
 
     gfs_run = f"rain_{_current_gfs_run()}"
 
     print(f"\n{'='*60}")
-    print(f"RAIN MARKETS — PAPER_TRADING={PAPER_TRADING} | {gfs_run} | Day {today.day} of month")
+    mode = "SIGNALS ONLY (past day-10 cutoff)" if past_entry_cutoff else "ACTIVE"
+    print(f"RAIN MARKETS — PAPER_TRADING={PAPER_TRADING} | {gfs_run} | Day {today.day} of month | Mode: {mode}")
     print(f"{'='*60}\n")
 
     client = KalshiClient()
@@ -186,7 +189,17 @@ def run_rain_cycle():
     else:
         final_bets = bet_candidates
 
-    # ── Phase 3: Place trades ──
+    # ── Phase 3: Place trades (skipped after day-10 cutoff) ──
+    if past_entry_cutoff:
+        if final_bets:
+            print(f"\n[SIGNALS-ONLY MODE] Would have placed {len(final_bets)} rain bet(s); "
+                  f"skipping trade placement due to day-{RAIN_MAX_ENTRY_DAY} cutoff. "
+                  f"Signals are logged in the database for retrospective analysis.")
+        else:
+            print(f"\n[SIGNALS-ONLY MODE] No actionable rain bets this run (also past day-{RAIN_MAX_ENTRY_DAY} cutoff).")
+        print(f"\nRain cycle complete. Bets placed: 0 (signals-only mode)")
+        return
+
     bets_placed = 0
     for c in final_bets:
         market      = c['market']
