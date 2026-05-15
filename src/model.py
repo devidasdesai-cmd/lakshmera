@@ -46,6 +46,40 @@ def kelly_size(edge: float, capital: float, kelly_cap: float) -> float:
     return min(edge, kelly_cap) * capital
 
 
+def compute_stake_cap(side: str, direction: str, price_paid: float) -> int:
+    """
+    Per-bet stake cap based on bet category and price tier. Tiers derived from
+    analysis of 473 settled trades + 102 blocked NO_BET signals.
+
+    Profitable categories get scaled up; everything else stays at the base $100.
+
+      $300: NO bets at 80-95¢ (90.8% WR historically — highest scale opportunity)
+      $200: Bucket NO at 60-80¢ (73.8% WR, profitable)
+      $200: Tail YES at 5-20¢ (asymmetric payoff with reasonable frequency)
+      $150: Cheap longshot Tail YES at 0-5¢ (asymmetric, low frequency)
+      $100: All other categories (default base)
+    """
+    is_bucket = (direction == 'bucket')
+    is_tail = (direction in ('above', 'below'))
+
+    if side == 'no':
+        # NO bets paid at 80-95¢ — high win rate across both Bucket and Tail
+        if 0.80 <= price_paid < 0.95:
+            return 300
+        # Bucket NO at standard mid-range — historically profitable
+        if is_bucket and 0.60 <= price_paid < 0.80:
+            return 200
+    elif side == 'yes' and is_tail:
+        # Tail YES at moderate cheap prices — better odds, scale more
+        if 0.05 <= price_paid < 0.20:
+            return 200
+        # Cheap longshot tail YES — asymmetric upside, modest bump
+        if price_paid < 0.05:
+            return 150
+
+    return 100
+
+
 def calibrate_probability(raw_prob: float, base_rate: float = None) -> float:
     """
     Shrink raw GFS-derived probability toward a base rate.

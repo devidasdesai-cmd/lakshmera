@@ -6,16 +6,31 @@ import os
 PAPER_TRADING = True
 
 # --- Capital management ---
-STARTING_CAPITAL = 5000
-MAX_TRADE_SIZE_USD = 100    # Hard cap per trade. Keep at 100 until calibration is validated
-                            # by forward-test data (~3-4 weeks). Raise to 200 only if cumulative
-                            # P&L is ≥ +$500 over that period.
-DAILY_LOSS_LIMIT_USD = 150  # Bot shuts down for the day if hit
+STARTING_CAPITAL = 15000    # Deployable paper capital. Up from $5K based on user direction.
+MAX_TRADE_SIZE_USD = 300    # Absolute ceiling per bet. Per-tier caps (see model.compute_stake_cap)
+                            # narrow this further for less-profitable bet categories.
+DAILY_LOSS_LIMIT_USD = 450  # Scales 3x with stake size raise (was 150 at $100 max stake).
 MIN_EDGE_THRESHOLD = 0.05   # Minimum 5% edge required to place any bet
-MAX_EDGE_THRESHOLD = 0.55   # Edge above this is likely a model bias artifact — log but don't bet
-MAX_NO_BET_YES_PRICE = 0.20 # Don't bet NO when market prices YES above this — 20-30% range lost -$246 in data
+MAX_EDGE_THRESHOLD = 0.55   # Edge above this is "suspicious"; usually blocked but see exception below.
+MAX_NO_BET_YES_PRICE = 0.20 # Don't bet NO when market prices YES above this.
+MAX_YES_BET_MARKET_PRICE = 0.20  # Don't bet YES when market prices YES above this (data: 20-50% range
+                                 # of market YES is a losing zone).
 # (Removed MAX_NO_BET_OUR_PROB: calibration now corrects model overconfidence at the source,
 #  so the redundant safety rule was blocking our best-performing NO bet category.)
+
+# Tail-NO bets historically lost -$658 across 38 trades despite 65.8% WR — the bet structure
+# requires ~70%+ WR to break even, and our model can't reliably hit that on tail NO contracts.
+# Toggle to disable; mirrors the Bucket YES ban.
+BAN_TAIL_NO_BETS = True
+
+# Allow YES bets at very cheap prices to bypass the MAX_EDGE_THRESHOLD "suspicious" cap.
+# Historical signal analysis: 22 blocked YES bets at <5¢ market price had +$29K hypothetical
+# P&L from asymmetric-payoff longshots concentrated in desert cities.
+ALLOW_CHEAP_TAIL_YES_THROUGH_SUSPICIOUS = True
+CHEAP_TAIL_YES_MAX_PRICE = 0.05  # Only bypass if market YES ≤ 5¢
+
+# Rain bets stay at base $100 stake; no settled rain data yet to size up confidently.
+MAX_RAIN_BET_SIZE_USD = 100
 
 # --- Probability calibration ---
 # Raw GFS-derived probabilities are systematically miscalibrated. From 338 settled trades:
@@ -23,10 +38,12 @@ MAX_NO_BET_YES_PRICE = 0.20 # Don't bet NO when market prices YES above this —
 # The market is well-calibrated; our model is not. Shrinking toward the empirical base
 # rate corrects for this before computing edge.
 # Set CALIBRATION_ALPHA = 1.0 to disable (no shrinkage, raw probabilities used directly).
-CALIBRATION_ALPHA = 0.7      # Raised from 0.5 — trusts current forecast more, climatology
-                             # less. Avoids over-correcting on genuine weather anomalies
-                             # (e.g., heat waves) where historical norms misleadingly pull
-                             # predictions back toward typical days.
+CALIBRATION_ALPHA = 0.85     # Raised from 0.7 — trusts the live blended ensemble (GFS+ECMWF)
+                             # even more, with climatology contributing only ~15% as a soft
+                             # anchor. Earlier 0.7 was producing too many losing YES bets on
+                             # cool-anomaly days (e.g., May 12 lost all 8 YES bets when
+                             # climatology pulled predictions toward "warm seasonal norm"
+                             # but actual weather was cooler).
 TEMPERATURE_BASE_RATE = 0.25  # used when city-specific climatology is unavailable
 
 # --- Correlated bet management ---

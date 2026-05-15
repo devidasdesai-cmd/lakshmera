@@ -6,9 +6,11 @@ from config import (
     PAPER_TRADING,
     STARTING_CAPITAL,
     MAX_TRADE_SIZE_USD,
+    MAX_RAIN_BET_SIZE_USD,
     MIN_EDGE_THRESHOLD,
     MAX_EDGE_THRESHOLD,
     MAX_NO_BET_YES_PRICE,
+    MAX_YES_BET_MARKET_PRICE,
     ONE_BET_PER_CITY_DATE,
     KELLY_CAP,
     KALSHI_FEE_RATE,
@@ -149,13 +151,21 @@ def run_rain_cycle():
             reason = "suspicious_edge_max_exceeded"
             print(f"  Action: SUSPICIOUS_EDGE (edge > {MAX_EDGE_THRESHOLD} — possible model bias, skipping)\n")
         elif edge_yes > MIN_EDGE_THRESHOLD:
-            action = "BET_YES"
+            # Priority 2: YES price cap also applies to rain (all rain contracts are "above" tail-like)
+            if yes_ask > MAX_YES_BET_MARKET_PRICE:
+                action = "NO_BET"
+                reason = "yes_market_price_too_high"
+                print(f"  Action: NO_BET (YES edge {edge_yes:+.2f} but market YES price {yes_ask:.2f} > {MAX_YES_BET_MARKET_PRICE} cap)\n")
+            else:
+                action = "BET_YES"
         elif edge_no > MIN_EDGE_THRESHOLD:
             if yes_ask > MAX_NO_BET_YES_PRICE:
                 action = "NO_BET"
                 reason = "yes_price_too_high"
                 print(f"  Action: NO_BET (NO edge {edge_no:+.2f} but YES price {yes_ask:.2f} > {MAX_NO_BET_YES_PRICE} cap)\n")
             else:
+                # Note: Tail NO ban does NOT apply to rain — no settled rain data yet to
+                # validate the ban for monthly precip contracts. Revisit after June 1 settlements.
                 action = "BET_NO"
         else:
             action = "NO_BET"
@@ -219,7 +229,9 @@ def run_rain_cycle():
         no_ask      = c['no_ask']
         ticker      = market['ticker']
 
-        bet_usd = min(kelly_size(active_edge, STARTING_CAPITAL, KELLY_CAP), MAX_TRADE_SIZE_USD)
+        # Rain stake stays at $100 (MAX_RAIN_BET_SIZE_USD) until we have settled rain
+        # data to validate the higher tiers we're using for temperature contracts.
+        bet_usd = min(kelly_size(active_edge, STARTING_CAPITAL, KELLY_CAP), MAX_RAIN_BET_SIZE_USD)
         bet_usd = max(round(bet_usd), 5)
         side = "yes" if action == "BET_YES" else "no"
         price = yes_ask if side == "yes" else no_ask

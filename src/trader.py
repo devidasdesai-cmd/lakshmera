@@ -9,6 +9,10 @@ from config import (
     MIN_EDGE_THRESHOLD,
     MAX_EDGE_THRESHOLD,
     MAX_NO_BET_YES_PRICE,
+    MAX_YES_BET_MARKET_PRICE,
+    BAN_TAIL_NO_BETS,
+    ALLOW_CHEAP_TAIL_YES_THROUGH_SUSPICIOUS,
+    CHEAP_TAIL_YES_MAX_PRICE,
     ONE_BET_PER_CITY_DATE,
     USE_ECMWF_BLEND,
     USE_CLIMATOLOGY_BASE_RATE,
@@ -21,7 +25,7 @@ from config import (
 )
 from kalshi_client import KalshiClient
 from market_parser import parse_market
-from model import kelly_size, calibrate_probability
+from model import kelly_size, calibrate_probability, compute_stake_cap
 from weather import (
     get_ensemble_temps, get_blended_ensemble_temps,
     get_climatology_temps, climatology_base_rate,
@@ -207,14 +211,35 @@ def run_cycle():
 
         reason = None
         if edge_yes > MAX_EDGE_THRESHOLD or edge_no > MAX_EDGE_THRESHOLD:
-            action = "SUSPICIOUS_EDGE"
-            reason = "suspicious_edge_max_exceeded"
-            print(f"  Action: SUSPICIOUS_EDGE (edge exceeds {MAX_EDGE_THRESHOLD} — possible GFS bias, skipping)\n")
+            # Priority 3: allow cheap tail YES bets through the "suspicious" cap.
+            # Asymmetric-payoff longshots (e.g., Phoenix > 105°F at 3¢) — capped
+            # downside ($100 max loss) but huge upside on rare wins.
+            is_cheap_tail_yes = (
+                ALLOW_CHEAP_TAIL_YES_THROUGH_SUSPICIOUS
+                and edge_yes > MAX_EDGE_THRESHOLD
+                and direction in ("above", "below")
+                and yes_ask <= CHEAP_TAIL_YES_MAX_PRICE
+            )
+            if is_cheap_tail_yes:
+                action = "BET_YES"
+                reason = "cheap_tail_yes_allowed_through_suspicious_edge"
+                print(f"  Action: BET_YES (cheap tail YES at {yes_ask:.2f} ≤ {CHEAP_TAIL_YES_MAX_PRICE} — "
+                      f"allowed through MAX_EDGE_THRESHOLD as asymmetric-payoff longshot)\n")
+            else:
+                action = "SUSPICIOUS_EDGE"
+                reason = "suspicious_edge_max_exceeded"
+                print(f"  Action: SUSPICIOUS_EDGE (edge exceeds {MAX_EDGE_THRESHOLD} — possible GFS bias, skipping)\n")
         elif edge_yes > MIN_EDGE_THRESHOLD:
             if direction == "bucket":
                 action = "NO_BET"
                 reason = "bucket_yes_banned"
                 print(f"  Action: NO_BET (YES edge {edge_yes:+.2f} but bucket contract — GFS too imprecise for 2°F ranges)\n")
+            elif yes_ask > MAX_YES_BET_MARKET_PRICE:
+                # Priority 2: don't bet YES when market already prices YES above 20%.
+                # Historical data: 20-50% market YES is a losing zone for YES bets.
+                action = "NO_BET"
+                reason = "yes_market_price_too_high"
+                print(f"  Action: NO_BET (YES edge {edge_yes:+.2f} but market YES price {yes_ask:.2f} > {MAX_YES_BET_MARKET_PRICE} cap)\n")
             else:
                 action = "BET_YES"
         elif edge_no > MIN_EDGE_THRESHOLD:
@@ -222,6 +247,13 @@ def run_cycle():
                 action = "NO_BET"
                 reason = "yes_price_too_high"
                 print(f"  Action: NO_BET (NO edge {edge_no:+.2f} but YES price {yes_ask:.2f} > {MAX_NO_BET_YES_PRICE} cap)\n")
+            elif BAN_TAIL_NO_BETS and direction in ("above", "below"):
+                # Priority 1: ban Tail NO bets. Historical: -$658 across 38 trades at 65.8% WR —
+                # the bet structure requires ~70%+ WR to break even, model can't reliably hit it.
+                action = "NO_BET"
+                reason = "tail_no_banned"
+                print(f"  Action: NO_BET (NO edge {edge_no:+.2f} but tail contract — Tail NO bets banned, "
+                      f"historically -$658 P&L)\n")
             else:
                 action = "BET_NO"
         else:
@@ -273,10 +305,12 @@ def run_cycle():
         no_ask      = c['no_ask']
         ticker      = market['ticker']
 
-        bet_usd = min(kelly_size(active_edge, STARTING_CAPITAL, KELLY_CAP), MAX_TRADE_SIZE_USD)
-        bet_usd = max(round(bet_usd), 5)
         side = "yes" if action == "BET_YES" else "no"
         price = yes_ask if side == "yes" else no_ask
+        # Priority 5: tier-based stake cap. Higher caps for historically profitable categories.
+        tier_cap = compute_stake_cap(side, market["direction"], price)
+        bet_usd = min(kelly_size(active_edge, STARTING_CAPITAL, KELLY_CAP), tier_cap, MAX_TRADE_SIZE_USD)
+        bet_usd = max(round(bet_usd), 5)
         contract_count = min(200, max(1, int((bet_usd * 100) / (price * 100))))
 
         # Diagnostic: log Kalshi order book depth at the ask. In paper mode this is
