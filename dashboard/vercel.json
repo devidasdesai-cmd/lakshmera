@@ -1,0 +1,16 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/trigger-bot",
+      "schedule": "16 11 * * *"
+    },
+    {
+      "path": "/api/cron/trigger-bot",
+      "schedule": "37 16 * * *"
+    },
+    {
+      "path": "/api/cron/trigger-bot",
+      "schedule": "37 23 * * *"
+    }
+  ]
+}
