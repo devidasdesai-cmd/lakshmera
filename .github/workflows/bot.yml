@@ -2,17 +2,14 @@ name: Lakshmera Weather Bot
 
 on:
   schedule:
-    # Three runs per day, each on a separate cron entry for clarity.
-    # Spread across UTC hours (11, 16, 23) to avoid having all three
-    # vulnerable to the same European-peak congestion window (13-15 UTC).
-    # Minute offsets `:16` and `:37` are prime/odd numbers that dodge the
-    # heavily-loaded top-of-hour and quarter-hour marks.
-    #
-    # Schedule (clean re-introduction after step 1 cleared the slate):
-    - cron: "16 11 * * *"   # 11:16 UTC = 6:16 AM CT  — early morning, pre-European-peak
-    - cron: "37 16 * * *"   # 16:37 UTC = 11:37 AM CT — fresh 12z GFS data, primary window
-    - cron: "37 23 * * *"   # 23:37 UTC = 6:37 PM CT  — fresh 18z GFS data, very quiet UTC slot
-  workflow_dispatch: # Manual trigger from GitHub Actions tab
+    # The 11:37 AM CT and 6:37 PM CT runs are now triggered by Vercel Cron
+    # (dashboard/vercel.json), which is reliable. The only schedule entry
+    # remaining here is the morning slot, which Vercel Cron can't cover on
+    # the Hobby plan's 2-cron-per-project limit. This is best-effort —
+    # GitHub Actions may still skip it, but if it fires it catches the
+    # early NWS Daily Climate Reports for prior-day settlements.
+    - cron: "16 11 * * *"   # 11:16 UTC = 6:16 AM CT
+  workflow_dispatch: # Manual trigger; also used by Vercel Cron via workflow_dispatch API
 
 jobs:
   run-bot:
