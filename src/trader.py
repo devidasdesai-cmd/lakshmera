@@ -205,26 +205,31 @@ def run_cycle():
 
         print(f"  Our prob: raw {raw_prob:.2f} → calibrated {our_prob:.2f} | Edge YES: {edge_yes:+.2f}  Edge NO: {edge_no:+.2f}")
 
+        reason = None
         if edge_yes > MAX_EDGE_THRESHOLD or edge_no > MAX_EDGE_THRESHOLD:
             action = "SUSPICIOUS_EDGE"
+            reason = "suspicious_edge_max_exceeded"
             print(f"  Action: SUSPICIOUS_EDGE (edge exceeds {MAX_EDGE_THRESHOLD} — possible GFS bias, skipping)\n")
         elif edge_yes > MIN_EDGE_THRESHOLD:
             if direction == "bucket":
                 action = "NO_BET"
+                reason = "bucket_yes_banned"
                 print(f"  Action: NO_BET (YES edge {edge_yes:+.2f} but bucket contract — GFS too imprecise for 2°F ranges)\n")
             else:
                 action = "BET_YES"
         elif edge_no > MIN_EDGE_THRESHOLD:
             if yes_ask > MAX_NO_BET_YES_PRICE:
                 action = "NO_BET"
+                reason = "yes_price_too_high"
                 print(f"  Action: NO_BET (NO edge {edge_no:+.2f} but YES price {yes_ask:.2f} > {MAX_NO_BET_YES_PRICE} cap)\n")
             else:
                 action = "BET_NO"
         else:
             action = "NO_BET"
+            reason = "edge_too_low"
             print(f"  Action: NO_BET (best edge {max(edge_yes, edge_no):.2f} < {MIN_EDGE_THRESHOLD})\n")
 
-        log_signal(city["name"], ticker, our_prob, yes_ask, edge_yes, action)
+        log_signal(city["name"], ticker, our_prob, yes_ask, edge_yes, action, reason=reason)
 
         if action in ("NO_BET", "SUSPICIOUS_EDGE"):
             continue

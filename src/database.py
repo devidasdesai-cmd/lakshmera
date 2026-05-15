@@ -6,15 +6,20 @@ def get_connection():
     return psycopg2.connect(SUPABASE_DB_URL)
 
 
-def log_signal(city, ticker, our_prob, market_prob, edge, action):
+def log_signal(city, ticker, our_prob, market_prob, edge, action, reason=None):
+    """
+    Log a signal row. `reason` disambiguates NO_BET / SUSPICIOUS_EDGE actions
+    (e.g., "edge_too_low", "yes_price_too_high", "bucket_yes_banned"). Leave
+    None for BET_YES / BET_NO actions where the action itself is sufficient.
+    """
     conn = get_connection()
     cur = conn.cursor()
     cur.execute(
         """
-        INSERT INTO signals (city, ticker, our_probability, market_probability, edge, action)
-        VALUES (%s, %s, %s, %s, %s, %s)
+        INSERT INTO signals (city, ticker, our_probability, market_probability, edge, action, reason)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
         """,
-        (city, ticker, our_prob, market_prob, edge, action),
+        (city, ticker, our_prob, market_prob, edge, action, reason),
     )
     conn.commit()
     cur.close()

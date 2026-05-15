@@ -143,22 +143,31 @@ def run_rain_cycle():
 
         print(f"  Our prob: {our_prob:.2f} | Edge YES: {edge_yes:+.2f}  Edge NO: {edge_no:+.2f}")
 
+        reason = None
         if edge_yes > MAX_EDGE_THRESHOLD or edge_no > MAX_EDGE_THRESHOLD:
             action = "SUSPICIOUS_EDGE"
+            reason = "suspicious_edge_max_exceeded"
             print(f"  Action: SUSPICIOUS_EDGE (edge > {MAX_EDGE_THRESHOLD} — possible model bias, skipping)\n")
         elif edge_yes > MIN_EDGE_THRESHOLD:
             action = "BET_YES"
         elif edge_no > MIN_EDGE_THRESHOLD:
             if yes_ask > MAX_NO_BET_YES_PRICE:
                 action = "NO_BET"
+                reason = "yes_price_too_high"
                 print(f"  Action: NO_BET (NO edge {edge_no:+.2f} but YES price {yes_ask:.2f} > {MAX_NO_BET_YES_PRICE} cap)\n")
             else:
                 action = "BET_NO"
         else:
             action = "NO_BET"
+            reason = "edge_too_low"
             print(f"  Action: NO_BET (best edge {max(edge_yes, edge_no):.2f} < {MIN_EDGE_THRESHOLD})\n")
 
-        log_signal(city["name"], ticker, our_prob, yes_ask, max(edge_yes, edge_no), action)
+        # Tag BET_YES/BET_NO signals with the past-cutoff reason so retrospective
+        # analysis can identify which signals were generated in signals-only mode.
+        if past_entry_cutoff and reason is None:
+            reason = "past_entry_cutoff_signals_only"
+
+        log_signal(city["name"], ticker, our_prob, yes_ask, max(edge_yes, edge_no), action, reason=reason)
 
         if action in ("NO_BET", "SUSPICIOUS_EDGE"):
             continue
