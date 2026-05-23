@@ -13,8 +13,12 @@ DAILY_LOSS_LIMIT_USD = 450  # Scales 3x with stake size raise (was 150 at $100 m
 MIN_EDGE_THRESHOLD = 0.05   # Minimum 5% edge required to place any bet
 MAX_EDGE_THRESHOLD = 0.55   # Edge above this is "suspicious"; usually blocked but see exception below.
 MAX_NO_BET_YES_PRICE = 0.20 # Don't bet NO when market prices YES above this.
-MAX_YES_BET_MARKET_PRICE = 0.20  # Don't bet YES when market prices YES above this (data: 20-50% range
-                                 # of market YES is a losing zone).
+MAX_YES_BET_MARKET_PRICE = 0.05  # Don't bet YES when market prices YES above this.
+                                 # Lowered from 0.20 on 2026-05-22 after 0/53 YES wins post-May-15:
+                                 # 5-20¢ band lost -$436 (0/20), 0-5¢ band lost -$98 (0/16). The
+                                 # 5-20¢ band requires >10% true hit rate to break even and we are
+                                 # nowhere near; only cheap longshots remain alive on asymmetric-payoff
+                                 # thesis.
 # (Removed MAX_NO_BET_OUR_PROB: calibration now corrects model overconfidence at the source,
 #  so the redundant safety rule was blocking our best-performing NO bet category.)
 
@@ -38,12 +42,13 @@ MAX_RAIN_BET_SIZE_USD = 100
 # The market is well-calibrated; our model is not. Shrinking toward the empirical base
 # rate corrects for this before computing edge.
 # Set CALIBRATION_ALPHA = 1.0 to disable (no shrinkage, raw probabilities used directly).
-CALIBRATION_ALPHA = 0.85     # Raised from 0.7 — trusts the live blended ensemble (GFS+ECMWF)
-                             # even more, with climatology contributing only ~15% as a soft
-                             # anchor. Earlier 0.7 was producing too many losing YES bets on
-                             # cool-anomaly days (e.g., May 12 lost all 8 YES bets when
-                             # climatology pulled predictions toward "warm seasonal norm"
-                             # but actual weather was cooler).
+CALIBRATION_ALPHA = 0.5      # Returned to the original 2026-05-10 calibration value after
+                             # raising it to 0.85 on 2026-05-14 made YES bets worse, not better.
+                             # 0/53 YES wins since May 15 confirmed the model is structurally
+                             # overconfident on tail YES at every probability band (65-75%, 50-60%,
+                             # 30-50%, <30% — all 0% actual). Shrinking aggressively toward the
+                             # 0.25 base rate is the correct response; the May 14 raise was solving
+                             # the wrong problem.
 TEMPERATURE_BASE_RATE = 0.25  # used when city-specific climatology is unavailable
 
 # --- Correlated bet management ---
