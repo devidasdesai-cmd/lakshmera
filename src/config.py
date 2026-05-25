@@ -27,6 +27,15 @@ MAX_YES_BET_MARKET_PRICE = 0.05  # Don't bet YES when market prices YES above th
 # Toggle to disable; mirrors the Bucket YES ban.
 BAN_TAIL_NO_BETS = True
 
+# Carve-out from MAX_NO_BET_YES_PRICE for bucket NO bets when the market mildly leans YES
+# (50-65¢). NO_BET signal analysis over May 14-23 found 10 settled bucket NO blocks in this
+# band with 80% WR (+$589 hypothetical P&L). Wins concentrated in desert/coastal cities
+# (Las Vegas 4-0, Phoenix 2-2, LA/Houston 1-0 each). Shipping with default $100 stake to
+# gather forward data; raise stake only if pattern validates over next 2 weeks.
+ALLOW_BUCKET_NO_IN_LEAN_YES_ZONE = True
+LEAN_YES_ZONE_MIN = 0.50
+LEAN_YES_ZONE_MAX = 0.65
+
 # Allow YES bets at very cheap prices to bypass the MAX_EDGE_THRESHOLD "suspicious" cap.
 # Historical signal analysis: 22 blocked YES bets at <5¢ market price had +$29K hypothetical
 # P&L from asymmetric-payoff longshots concentrated in desert cities.

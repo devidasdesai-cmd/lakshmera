@@ -13,6 +13,9 @@ from config import (
     BAN_TAIL_NO_BETS,
     ALLOW_CHEAP_TAIL_YES_THROUGH_SUSPICIOUS,
     CHEAP_TAIL_YES_MAX_PRICE,
+    ALLOW_BUCKET_NO_IN_LEAN_YES_ZONE,
+    LEAN_YES_ZONE_MIN,
+    LEAN_YES_ZONE_MAX,
     ONE_BET_PER_CITY_DATE,
     USE_ECMWF_BLEND,
     USE_CLIMATOLOGY_BASE_RATE,
@@ -243,7 +246,15 @@ def run_cycle():
             else:
                 action = "BET_YES"
         elif edge_no > MIN_EDGE_THRESHOLD:
-            if yes_ask > MAX_NO_BET_YES_PRICE:
+            # Lean-YES bucket NO carve-out (added 2026-05-25). Bucket NO blocks in
+            # 50-65% mkt YES band ran 8/10 (80% WR, +$589) over May 14-23. Allow
+            # through the MAX_NO_BET_YES_PRICE cap to gather forward data.
+            is_lean_yes_bucket_no = (
+                ALLOW_BUCKET_NO_IN_LEAN_YES_ZONE
+                and direction == "bucket"
+                and LEAN_YES_ZONE_MIN <= yes_ask < LEAN_YES_ZONE_MAX
+            )
+            if yes_ask > MAX_NO_BET_YES_PRICE and not is_lean_yes_bucket_no:
                 action = "NO_BET"
                 reason = "yes_price_too_high"
                 print(f"  Action: NO_BET (NO edge {edge_no:+.2f} but YES price {yes_ask:.2f} > {MAX_NO_BET_YES_PRICE} cap)\n")
@@ -256,6 +267,10 @@ def run_cycle():
                       f"historically -$658 P&L)\n")
             else:
                 action = "BET_NO"
+                if is_lean_yes_bucket_no:
+                    reason = "lean_yes_bucket_no_carveout"
+                    print(f"  Action: BET_NO (lean-YES bucket NO carve-out: mkt YES {yes_ask:.2f} in "
+                          f"[{LEAN_YES_ZONE_MIN}, {LEAN_YES_ZONE_MAX}), bypassing {MAX_NO_BET_YES_PRICE} cap)\n")
         else:
             action = "NO_BET"
             reason = "edge_too_low"
