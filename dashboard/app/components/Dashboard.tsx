@@ -503,6 +503,7 @@ export default function Dashboard({ settled, active, signals }: Props) {
                   <ColHeader label="Date"     tip="Date this contract resolves"                                                                 sortKey="targetDateStr"    sort={activeSort} onSort={k => setActiveSort(toggleSort(activeSort, k))} />
                   <ColHeader label="Contract" tip="T = tail bet (above or below a threshold). B = bucket bet (temperature falls in a range)"   sortKey="typeCode"         sort={activeSort} onSort={k => setActiveSort(toggleSort(activeSort, k))} />
                   <ColHeader label="Side"     tip="YES = we bet the condition is met. NO = we bet it is not"                                    sortKey="side"             sort={activeSort} onSort={k => setActiveSort(toggleSort(activeSort, k))} />
+                  <ColHeader label="Amount"   tip="Dollars staked on this open position (paper money in PAPER_TRADING mode)"                    sortKey="amount_usd"       sort={activeSort} onSort={k => setActiveSort(toggleSort(activeSort, k))} />
                   <ColHeader label="Price"    tip="Price paid per contract (0–1 scale). 0.30 means 30 cents. Payout is $1 per contract if won"  sortKey="price_paid"       sort={activeSort} onSort={k => setActiveSort(toggleSort(activeSort, k))} />
                   <ColHeader label="Our %"    tip="Our model's probability estimate using GFS ensemble weather forecasts (31 model runs)"       sortKey="our_probability"  sort={activeSort} onSort={k => setActiveSort(toggleSort(activeSort, k))} />
                   <ColHeader label="Mkt %"    tip="The market's implied probability — the price other traders are paying for YES contracts"     sortKey="market_probability" sort={activeSort} onSort={k => setActiveSort(toggleSort(activeSort, k))} />
@@ -524,6 +525,7 @@ export default function Dashboard({ settled, active, signals }: Props) {
                         {t.side.toUpperCase()}
                       </span>
                     </td>
+                    <td className="px-4 py-2.5 text-gray-700 dark:text-gray-300 tabular-nums font-mono text-xs">{currency(t.amount_usd)}</td>
                     <td className="px-4 py-2.5 text-gray-700 dark:text-gray-300 tabular-nums font-mono text-xs">
                       {t.price_paid ? parseFloat(t.price_paid).toFixed(2) : '—'}
                     </td>
