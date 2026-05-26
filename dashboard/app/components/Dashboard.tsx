@@ -22,6 +22,22 @@ interface EnrichedTrade extends Trade {
   typeCode:      string
   targetDateStr: string
   isRain:        boolean
+  edge:          number | null  // post-fee edge on the side bet at trade time
+}
+
+// Kalshi fee is 7% on net profit of a winning contract.
+const KALSHI_FEE_RATE = 0.07
+
+function computeTradeEdge(t: Trade): number | null {
+  const op = parseFloat(t.our_probability)
+  const mp = parseFloat(t.market_probability)
+  if (isNaN(op) || isNaN(mp)) return null
+  if (t.side === 'yes') {
+    // YES paid at price mp; fee = rate * (1 - mp)
+    return op - mp - KALSHI_FEE_RATE * (1 - mp)
+  }
+  // NO paid at price (1 - mp); fee = rate * mp
+  return (1 - op) - (1 - mp) - KALSHI_FEE_RATE * mp
 }
 
 interface EnrichedSignal extends Signal {
@@ -35,7 +51,7 @@ interface EnrichedSignal extends Signal {
 
 function enrichTrade(t: Trade): EnrichedTrade {
   const { city, dateDisplay, typeCode, targetDateStr, isRain } = parseTicker(t.ticker)
-  return { ...t, city, dateDisplay, typeCode, targetDateStr, isRain }
+  return { ...t, city, dateDisplay, typeCode, targetDateStr, isRain, edge: computeTradeEdge(t) }
 }
 
 function enrichSignal(s: Signal): EnrichedSignal {
@@ -413,6 +429,9 @@ export default function Dashboard({ settled, active, signals }: Props) {
                   <ColHeader label="Contract" tip="T = tail bet (above or below a threshold). B = bucket bet (temperature falls in a range)"   sortKey="typeCode"      sort={settledSort} onSort={k => setSettledSort(toggleSort(settledSort, k))} />
                   <ColHeader label="Side"     tip="YES = we bet the condition is met. NO = we bet it is not"                                    sortKey="side"          sort={settledSort} onSort={k => setSettledSort(toggleSort(settledSort, k))} />
                   <ColHeader label="Price"    tip="Price paid per contract (0–1 scale). 0.30 means 30 cents. Payout is $1 per contract if won"  sortKey="price_paid"    sort={settledSort} onSort={k => setSettledSort(toggleSort(settledSort, k))} />
+                  <ColHeader label="Our %"    tip="Our model's probability of YES at the moment of trade (GFS ensemble × calibration)"           sortKey="our_probability"    sort={settledSort} onSort={k => setSettledSort(toggleSort(settledSort, k))} />
+                  <ColHeader label="Mkt %"    tip="Market's implied probability of YES at the moment of trade (the YES ask price)"               sortKey="market_probability" sort={settledSort} onSort={k => setSettledSort(toggleSort(settledSort, k))} />
+                  <ColHeader label="Edge"     tip="Post-fee edge on the side we bet. YES: our %–mkt %–fee. NO: mkt %–our %–fee. Higher = stronger disagreement with market." sortKey="edge" sort={settledSort} onSort={k => setSettledSort(toggleSort(settledSort, k))} />
                   <ColHeader label="Result"   tip="Whether the market resolved in our favor"                                                    sortKey="result"        sort={settledSort} onSort={k => setSettledSort(toggleSort(settledSort, k))} />
                   <ColHeader label="P&L"      tip="Dollar profit (green) or loss (red) on this paper trade"                                    sortKey="pnl"           sort={settledSort} onSort={k => setSettledSort(toggleSort(settledSort, k))} />
                 </tr>
@@ -438,6 +457,15 @@ export default function Dashboard({ settled, active, signals }: Props) {
                       </td>
                       <td className="px-4 py-2.5 text-gray-700 dark:text-gray-300 tabular-nums font-mono text-xs">
                         {t.price_paid ? parseFloat(t.price_paid).toFixed(2) : '—'}
+                      </td>
+                      <td className="px-4 py-2.5 text-gray-700 dark:text-gray-300 tabular-nums font-mono text-xs">{pct(t.our_probability)}</td>
+                      <td className="px-4 py-2.5 text-gray-700 dark:text-gray-300 tabular-nums font-mono text-xs">{pct(t.market_probability)}</td>
+                      <td className="px-4 py-2.5">
+                        {t.edge !== null ? (
+                          <span className={`tabular-nums font-mono text-xs font-medium ${t.edge >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                            {t.edge >= 0 ? '+' : ''}{(t.edge * 100).toFixed(1)}%
+                          </span>
+                        ) : '—'}
                       </td>
                       <td className="px-4 py-2.5">
                         {t.result ? (
