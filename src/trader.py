@@ -16,6 +16,8 @@ from config import (
     ALLOW_BUCKET_NO_IN_LEAN_YES_ZONE,
     LEAN_YES_ZONE_MIN,
     LEAN_YES_ZONE_MAX,
+    REDUCED_STAKE_NO_CITIES,
+    REDUCED_STAKE_NO_CAP_USD,
     ONE_BET_PER_CITY_DATE,
     USE_ECMWF_BLEND,
     USE_CLIMATOLOGY_BASE_RATE,
@@ -324,6 +326,9 @@ def run_cycle():
         price = yes_ask if side == "yes" else no_ask
         # Priority 5: tier-based stake cap. Higher caps for historically profitable categories.
         tier_cap = compute_stake_cap(side, market["direction"], price)
+        # Reduced-stake cities for NO bets (2026-05-28 P&L audit). Apply after tier cap.
+        if side == "no" and market["city"]["name"] in REDUCED_STAKE_NO_CITIES:
+            tier_cap = min(tier_cap, REDUCED_STAKE_NO_CAP_USD)
         bet_usd = min(kelly_size(active_edge, STARTING_CAPITAL, KELLY_CAP), tier_cap, MAX_TRADE_SIZE_USD)
         bet_usd = max(round(bet_usd), 5)
         contract_count = min(200, max(1, int((bet_usd * 100) / (price * 100))))

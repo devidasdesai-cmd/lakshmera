@@ -13,12 +13,14 @@ DAILY_LOSS_LIMIT_USD = 450  # Scales 3x with stake size raise (was 150 at $100 m
 MIN_EDGE_THRESHOLD = 0.05   # Minimum 5% edge required to place any bet
 MAX_EDGE_THRESHOLD = 0.55   # Edge above this is "suspicious"; usually blocked but see exception below.
 MAX_NO_BET_YES_PRICE = 0.20 # Don't bet NO when market prices YES above this.
-MAX_YES_BET_MARKET_PRICE = 0.05  # Don't bet YES when market prices YES above this.
-                                 # Lowered from 0.20 on 2026-05-22 after 0/53 YES wins post-May-15:
-                                 # 5-20¢ band lost -$436 (0/20), 0-5¢ band lost -$98 (0/16). The
-                                 # 5-20¢ band requires >10% true hit rate to break even and we are
-                                 # nowhere near; only cheap longshots remain alive on asymmetric-payoff
-                                 # thesis.
+MAX_YES_BET_MARKET_PRICE = 0.0   # YES bets fully disabled on 2026-05-28.
+                                 # Cumulative evidence over ~6 weeks: ~180 YES bets, ~3 wins, ~2% WR.
+                                 # 14-day audit (May 14-28): 79 YES bets, 2 wins, -$534. The cheap
+                                 # longshot band (0-5¢) is +$16 over 37 trades — statistical noise,
+                                 # not a working thesis. Calibration audit shows our model is
+                                 # anti-correlated with reality at every YES probability band.
+                                 # Set to 0.0 (since yes_ask is always > 0, this blocks all YES
+                                 # bets through the yes_market_price_too_high path).
 # (Removed MAX_NO_BET_OUR_PROB: calibration now corrects model overconfidence at the source,
 #  so the redundant safety rule was blocking our best-performing NO bet category.)
 
@@ -36,11 +38,19 @@ ALLOW_BUCKET_NO_IN_LEAN_YES_ZONE = True
 LEAN_YES_ZONE_MIN = 0.50
 LEAN_YES_ZONE_MAX = 0.65
 
-# Allow YES bets at very cheap prices to bypass the MAX_EDGE_THRESHOLD "suspicious" cap.
-# Historical signal analysis: 22 blocked YES bets at <5¢ market price had +$29K hypothetical
-# P&L from asymmetric-payoff longshots concentrated in desert cities.
-ALLOW_CHEAP_TAIL_YES_THROUGH_SUSPICIOUS = True
-CHEAP_TAIL_YES_MAX_PRICE = 0.05  # Only bypass if market YES ≤ 5¢
+# Reduced-stake city list for NO bets, added 2026-05-28. Per the 14-day P&L audit:
+# Oklahoma City NO -$394, DC NO -$160, Phoenix NO -$30, Los Angeles NO -$50.
+# Capping stakes at $50 instead of full ban so we keep collecting data on these cells
+# in case the losses turn out to be small-sample noise.
+REDUCED_STAKE_NO_CITIES = ("Oklahoma City", "DC", "Phoenix", "Los Angeles")
+REDUCED_STAKE_NO_CAP_USD = 50
+
+# Cheap-tail YES carve-out disabled on 2026-05-28. After 6 weeks of live trading, the
+# asymmetric-payoff thesis has failed to produce net positive P&L: 37 cheap-longshot trades
+# yielded 1 win, +$16 total (statistical noise). With YES bets fully disabled, this flag
+# is also off so the suspicious-edge path can never produce a YES bet.
+ALLOW_CHEAP_TAIL_YES_THROUGH_SUSPICIOUS = False
+CHEAP_TAIL_YES_MAX_PRICE = 0.05  # Retained for revert; unused while the flag above is False.
 
 # Rain bets stay at base $100 stake; no settled rain data yet to size up confidently.
 MAX_RAIN_BET_SIZE_USD = 100
