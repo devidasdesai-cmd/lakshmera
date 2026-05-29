@@ -13,6 +13,7 @@ export interface Trade {
   pnl: string | null
   created_at: string
   gfs_run: string | null
+  strategy_version: string | null
 }
 
 export interface Signal {

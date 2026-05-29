@@ -55,6 +55,14 @@ CHEAP_TAIL_YES_MAX_PRICE = 0.05  # Retained for revert; unused while the flag ab
 # Rain bets stay at base $100 stake; no settled rain data yet to size up confidently.
 MAX_RAIN_BET_SIZE_USD = 100
 
+# --- Strategy switch ---
+# "v1" = current edge-based logic (our_probability vs market price with all carve-outs).
+# "v2" = alternative strategy (logic TBD; will be added behind this flag in a follow-up).
+# Both code paths live in trader.py side-by-side; flipping the value is the rollback path.
+# Each placed trade is tagged with the version that produced it (trades.strategy_version
+# column) so we can attribute P&L per strategy.
+STRATEGY_VERSION = "v1"
+
 # --- Probability calibration ---
 # Raw GFS-derived probabilities are systematically miscalibrated. From 338 settled trades:
 # when raw_prob = 0-5%, actual YES rate is ~22%. When raw_prob = 70%+, actual is ~25%.

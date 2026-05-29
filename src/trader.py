@@ -18,6 +18,7 @@ from config import (
     LEAN_YES_ZONE_MAX,
     REDUCED_STAKE_NO_CITIES,
     REDUCED_STAKE_NO_CAP_USD,
+    STRATEGY_VERSION,
     ONE_BET_PER_CITY_DATE,
     USE_ECMWF_BLEND,
     USE_CLIMATOLOGY_BASE_RATE,
@@ -60,6 +61,68 @@ def _current_gfs_run() -> str:
     hour = datetime.now(timezone.utc).hour
     gfs_cycle = ((hour - 4) % 24 // 6) * 6
     return f"{gfs_cycle:02d}z"
+
+
+def decide_action_v1(edge_yes, edge_no, yes_ask, direction):
+    """
+    V1 strategy: current edge-based decision logic with all carve-outs preserved.
+    Returns (action, reason). Action is one of:
+      BET_YES, BET_NO, NO_BET, SUSPICIOUS_EDGE
+    Pure function over inputs + module-level config flags. No I/O or DB writes;
+    the caller handles printing/logging based on the returned values.
+    """
+    if edge_yes > MAX_EDGE_THRESHOLD or edge_no > MAX_EDGE_THRESHOLD:
+        is_cheap_tail_yes = (
+            ALLOW_CHEAP_TAIL_YES_THROUGH_SUSPICIOUS
+            and edge_yes > MAX_EDGE_THRESHOLD
+            and direction in ("above", "below")
+            and yes_ask <= CHEAP_TAIL_YES_MAX_PRICE
+        )
+        if is_cheap_tail_yes:
+            return ("BET_YES", "cheap_tail_yes_allowed_through_suspicious_edge")
+        return ("SUSPICIOUS_EDGE", "suspicious_edge_max_exceeded")
+    if edge_yes > MIN_EDGE_THRESHOLD:
+        if direction == "bucket":
+            return ("NO_BET", "bucket_yes_banned")
+        if yes_ask > MAX_YES_BET_MARKET_PRICE:
+            return ("NO_BET", "yes_market_price_too_high")
+        return ("BET_YES", None)
+    if edge_no > MIN_EDGE_THRESHOLD:
+        is_lean_yes_bucket_no = (
+            ALLOW_BUCKET_NO_IN_LEAN_YES_ZONE
+            and direction == "bucket"
+            and LEAN_YES_ZONE_MIN <= yes_ask < LEAN_YES_ZONE_MAX
+        )
+        if yes_ask > MAX_NO_BET_YES_PRICE and not is_lean_yes_bucket_no:
+            return ("NO_BET", "yes_price_too_high")
+        if BAN_TAIL_NO_BETS and direction in ("above", "below"):
+            return ("NO_BET", "tail_no_banned")
+        return ("BET_NO", "lean_yes_bucket_no_carveout" if is_lean_yes_bucket_no else None)
+    return ("NO_BET", "edge_too_low")
+
+
+def _print_v1_action(action, reason, edge_yes, edge_no, yes_ask, direction):
+    """Preserve the inline log output that lived in run_cycle pre-refactor."""
+    if action == "BET_YES" and reason == "cheap_tail_yes_allowed_through_suspicious_edge":
+        print(f"  Action: BET_YES (cheap tail YES at {yes_ask:.2f} ≤ {CHEAP_TAIL_YES_MAX_PRICE} — "
+              f"allowed through MAX_EDGE_THRESHOLD as asymmetric-payoff longshot)\n")
+    elif action == "SUSPICIOUS_EDGE":
+        print(f"  Action: SUSPICIOUS_EDGE (edge exceeds {MAX_EDGE_THRESHOLD} — possible GFS bias, skipping)\n")
+    elif action == "NO_BET" and reason == "bucket_yes_banned":
+        print(f"  Action: NO_BET (YES edge {edge_yes:+.2f} but bucket contract — GFS too imprecise for 2°F ranges)\n")
+    elif action == "NO_BET" and reason == "yes_market_price_too_high":
+        print(f"  Action: NO_BET (YES edge {edge_yes:+.2f} but market YES price {yes_ask:.2f} > {MAX_YES_BET_MARKET_PRICE} cap)\n")
+    elif action == "NO_BET" and reason == "yes_price_too_high":
+        print(f"  Action: NO_BET (NO edge {edge_no:+.2f} but YES price {yes_ask:.2f} > {MAX_NO_BET_YES_PRICE} cap)\n")
+    elif action == "NO_BET" and reason == "tail_no_banned":
+        print(f"  Action: NO_BET (NO edge {edge_no:+.2f} but tail contract — Tail NO bets banned, "
+              f"historically -$658 P&L)\n")
+    elif action == "BET_NO" and reason == "lean_yes_bucket_no_carveout":
+        print(f"  Action: BET_NO (lean-YES bucket NO carve-out: mkt YES {yes_ask:.2f} in "
+              f"[{LEAN_YES_ZONE_MIN}, {LEAN_YES_ZONE_MAX}), bypassing {MAX_NO_BET_YES_PRICE} cap)\n")
+    elif action == "NO_BET" and reason == "edge_too_low":
+        print(f"  Action: NO_BET (best edge {max(edge_yes, edge_no):.2f} < {MIN_EDGE_THRESHOLD})\n")
+    # BET_YES with reason=None and BET_NO with reason=None print no extra line (matches v1 behavior).
 
 
 def run_cycle():
@@ -214,69 +277,13 @@ def run_cycle():
 
         print(f"  Our prob: raw {raw_prob:.2f} → calibrated {our_prob:.2f} | Edge YES: {edge_yes:+.2f}  Edge NO: {edge_no:+.2f}")
 
-        reason = None
-        if edge_yes > MAX_EDGE_THRESHOLD or edge_no > MAX_EDGE_THRESHOLD:
-            # Priority 3: allow cheap tail YES bets through the "suspicious" cap.
-            # Asymmetric-payoff longshots (e.g., Phoenix > 105°F at 3¢) — capped
-            # downside ($100 max loss) but huge upside on rare wins.
-            is_cheap_tail_yes = (
-                ALLOW_CHEAP_TAIL_YES_THROUGH_SUSPICIOUS
-                and edge_yes > MAX_EDGE_THRESHOLD
-                and direction in ("above", "below")
-                and yes_ask <= CHEAP_TAIL_YES_MAX_PRICE
-            )
-            if is_cheap_tail_yes:
-                action = "BET_YES"
-                reason = "cheap_tail_yes_allowed_through_suspicious_edge"
-                print(f"  Action: BET_YES (cheap tail YES at {yes_ask:.2f} ≤ {CHEAP_TAIL_YES_MAX_PRICE} — "
-                      f"allowed through MAX_EDGE_THRESHOLD as asymmetric-payoff longshot)\n")
-            else:
-                action = "SUSPICIOUS_EDGE"
-                reason = "suspicious_edge_max_exceeded"
-                print(f"  Action: SUSPICIOUS_EDGE (edge exceeds {MAX_EDGE_THRESHOLD} — possible GFS bias, skipping)\n")
-        elif edge_yes > MIN_EDGE_THRESHOLD:
-            if direction == "bucket":
-                action = "NO_BET"
-                reason = "bucket_yes_banned"
-                print(f"  Action: NO_BET (YES edge {edge_yes:+.2f} but bucket contract — GFS too imprecise for 2°F ranges)\n")
-            elif yes_ask > MAX_YES_BET_MARKET_PRICE:
-                # Priority 2: don't bet YES when market already prices YES above 20%.
-                # Historical data: 20-50% market YES is a losing zone for YES bets.
-                action = "NO_BET"
-                reason = "yes_market_price_too_high"
-                print(f"  Action: NO_BET (YES edge {edge_yes:+.2f} but market YES price {yes_ask:.2f} > {MAX_YES_BET_MARKET_PRICE} cap)\n")
-            else:
-                action = "BET_YES"
-        elif edge_no > MIN_EDGE_THRESHOLD:
-            # Lean-YES bucket NO carve-out (added 2026-05-25). Bucket NO blocks in
-            # 50-65% mkt YES band ran 8/10 (80% WR, +$589) over May 14-23. Allow
-            # through the MAX_NO_BET_YES_PRICE cap to gather forward data.
-            is_lean_yes_bucket_no = (
-                ALLOW_BUCKET_NO_IN_LEAN_YES_ZONE
-                and direction == "bucket"
-                and LEAN_YES_ZONE_MIN <= yes_ask < LEAN_YES_ZONE_MAX
-            )
-            if yes_ask > MAX_NO_BET_YES_PRICE and not is_lean_yes_bucket_no:
-                action = "NO_BET"
-                reason = "yes_price_too_high"
-                print(f"  Action: NO_BET (NO edge {edge_no:+.2f} but YES price {yes_ask:.2f} > {MAX_NO_BET_YES_PRICE} cap)\n")
-            elif BAN_TAIL_NO_BETS and direction in ("above", "below"):
-                # Priority 1: ban Tail NO bets. Historical: -$658 across 38 trades at 65.8% WR —
-                # the bet structure requires ~70%+ WR to break even, model can't reliably hit it.
-                action = "NO_BET"
-                reason = "tail_no_banned"
-                print(f"  Action: NO_BET (NO edge {edge_no:+.2f} but tail contract — Tail NO bets banned, "
-                      f"historically -$658 P&L)\n")
-            else:
-                action = "BET_NO"
-                if is_lean_yes_bucket_no:
-                    reason = "lean_yes_bucket_no_carveout"
-                    print(f"  Action: BET_NO (lean-YES bucket NO carve-out: mkt YES {yes_ask:.2f} in "
-                          f"[{LEAN_YES_ZONE_MIN}, {LEAN_YES_ZONE_MAX}), bypassing {MAX_NO_BET_YES_PRICE} cap)\n")
+        if STRATEGY_VERSION == "v1":
+            action, reason = decide_action_v1(edge_yes, edge_no, yes_ask, direction)
+            _print_v1_action(action, reason, edge_yes, edge_no, yes_ask, direction)
+        elif STRATEGY_VERSION == "v2":
+            raise NotImplementedError("STRATEGY_VERSION=v2 selected but v2 logic is not yet implemented.")
         else:
-            action = "NO_BET"
-            reason = "edge_too_low"
-            print(f"  Action: NO_BET (best edge {max(edge_yes, edge_no):.2f} < {MIN_EDGE_THRESHOLD})\n")
+            raise ValueError(f"Unknown STRATEGY_VERSION: {STRATEGY_VERSION!r}")
 
         log_signal(city["name"], ticker, our_prob, yes_ask, edge_yes, action, reason=reason)
 
@@ -352,13 +359,13 @@ def run_cycle():
 
         if PAPER_TRADING:
             print(f"  [PAPER] {ticker} {action}: {contract_count} contracts @ {price:.2f} (~${bet_usd})")
-            log_trade(ticker, side, bet_usd, contract_count, price, our_prob, yes_ask, paper_trade=True, gfs_run=gfs_run)
+            log_trade(ticker, side, bet_usd, contract_count, price, our_prob, yes_ask, paper_trade=True, gfs_run=gfs_run, strategy_version=STRATEGY_VERSION)
         else:
             price_cents = int(price * 100)
             print(f"  [LIVE] {ticker} {action}: {contract_count} contracts @ {price_cents}¢ (~${bet_usd})")
             result = client.place_order(ticker, side, contract_count, price_cents)
             print(f"  Order result: {result}")
-            log_trade(ticker, side, bet_usd, contract_count, price, our_prob, yes_ask, paper_trade=False, gfs_run=gfs_run)
+            log_trade(ticker, side, bet_usd, contract_count, price, our_prob, yes_ask, paper_trade=False, gfs_run=gfs_run, strategy_version=STRATEGY_VERSION)
 
         bets_placed += 1
 

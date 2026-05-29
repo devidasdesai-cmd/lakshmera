@@ -426,6 +426,7 @@ export default function Dashboard({ settled, active, signals }: Props) {
                 <tr className="border-b border-gray-200 dark:border-gray-800">
                   <ColHeader label="City"     tip="US city where the weather contract is settled"                                               sortKey="city"          sort={settledSort} onSort={k => setSettledSort(toggleSort(settledSort, k))} />
                   <ColHeader label="Date"     tip="Date the high temperature is measured and the contract resolves"                             sortKey="targetDateStr" sort={settledSort} onSort={k => setSettledSort(toggleSort(settledSort, k))} />
+                  <ColHeader label="Strat"    tip="Which strategy version placed the bet. v1 = current edge-based logic."                       sortKey="strategy_version" sort={settledSort} onSort={k => setSettledSort(toggleSort(settledSort, k))} />
                   <ColHeader label="Contract" tip="T = tail bet (above or below a threshold). B = bucket bet (temperature falls in a range)"   sortKey="typeCode"      sort={settledSort} onSort={k => setSettledSort(toggleSort(settledSort, k))} />
                   <ColHeader label="Side"     tip="YES = we bet the condition is met. NO = we bet it is not"                                    sortKey="side"          sort={settledSort} onSort={k => setSettledSort(toggleSort(settledSort, k))} />
                   <ColHeader label="Amount"   tip="Dollars staked on this trade (paper money in PAPER_TRADING mode)"                            sortKey="amount_usd"    sort={settledSort} onSort={k => setSettledSort(toggleSort(settledSort, k))} />
@@ -450,6 +451,17 @@ export default function Dashboard({ settled, active, signals }: Props) {
                         </span>
                       </td>
                       <td className="px-4 py-2.5 text-gray-500 tabular-nums text-xs">{t.dateDisplay}</td>
+                      <td className="px-4 py-2.5">
+                        {t.strategy_version ? (
+                          <span className={`text-xs font-medium px-1.5 py-0.5 rounded border ${
+                            t.strategy_version === 'v1'
+                              ? 'bg-gray-50 dark:bg-gray-900 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700'
+                              : 'bg-violet-50 dark:bg-violet-950 text-violet-600 dark:text-violet-400 border-violet-200 dark:border-violet-800'
+                          }`}>
+                            {t.strategy_version}
+                          </span>
+                        ) : '—'}
+                      </td>
                       <td className="px-4 py-2.5 text-gray-700 dark:text-gray-300 font-mono text-xs tabular-nums">{t.typeCode}</td>
                       <td className="px-4 py-2.5">
                         <span className={`font-medium ${t.side === 'yes' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
