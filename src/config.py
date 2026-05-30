@@ -56,12 +56,25 @@ CHEAP_TAIL_YES_MAX_PRICE = 0.05  # Retained for revert; unused while the flag ab
 MAX_RAIN_BET_SIZE_USD = 100
 
 # --- Strategy switch ---
-# "v1" = current edge-based logic (our_probability vs market price with all carve-outs).
-# "v2" = alternative strategy (logic TBD; will be added behind this flag in a follow-up).
+# "v1" = original logic (GFS+ECMWF ensemble member fraction + α=0.5 shrinkage).
+# "v2" = distribution-fit (norm CDF around ensemble mean, σ=1.5°F, no calibration).
 # Both code paths live in trader.py side-by-side; flipping the value is the rollback path.
 # Each placed trade is tagged with the version that produced it (trades.strategy_version
 # column) so we can attribute P&L per strategy.
-STRATEGY_VERSION = "v1"
+#
+# V2 chosen 2026-05-30 after the May 29-30 diagnostics:
+#   - Bucket Brier:  V1 0.1981 (worst) → V2 0.1242 (best); 37% improvement
+#   - Tail Brier:    V1 0.2053 (worst) → V2 0.0589 (best); 71% improvement
+#   - Constant baseline beats V1 on both — V1 was actively miscalibrated.
+# Carve-outs (YES disabled, BAN_TAIL_NO_BETS, REDUCED_STAKE_NO_CITIES, lean-YES
+# bucket NO) are PRESERVED in V2 — only the probability calculation changes.
+STRATEGY_VERSION = "v2"
+
+# Forecast error std dev (°F) for V2's distribution-fit probability.
+# Fit empirically on 457 settled bucket trades — sweep over σ ∈ [1, 8] showed
+# σ=1.5 minimizes Brier. Per-city optimal σ ranges 1.0-2.5°F; global 1.5 captures
+# most of the value. Revisit after first 200 V2 settled trades.
+V2_FORECAST_SIGMA_F = 1.5
 
 # --- Probability calibration ---
 # Raw GFS-derived probabilities are systematically miscalibrated. From 338 settled trades:

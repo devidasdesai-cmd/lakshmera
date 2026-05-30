@@ -19,6 +19,7 @@ from config import (
     REDUCED_STAKE_NO_CITIES,
     REDUCED_STAKE_NO_CAP_USD,
     STRATEGY_VERSION,
+    V2_FORECAST_SIGMA_F,
     ONE_BET_PER_CITY_DATE,
     USE_ECMWF_BLEND,
     USE_CLIMATOLOGY_BASE_RATE,
@@ -37,6 +38,7 @@ from weather import (
     get_climatology_temps, climatology_base_rate,
     get_nws_forecast_temps,
     probability_above, probability_below, probability_between,
+    norm_probability_above, norm_probability_below, norm_probability_between,
 )
 from database import log_signal, log_trade, get_daily_realized_loss, get_open_tickers
 # settle_trades is now called upfront from main.py
@@ -49,6 +51,25 @@ def _estimate(temps, direction, threshold_f, low_f, high_f):
         return probability_below(temps, threshold_f)
     elif direction == "bucket" and low_f is not None and high_f is not None:
         return probability_between(temps, low_f, high_f)
+    return None
+
+
+def _estimate_v2(temps, direction, threshold_f, low_f, high_f):
+    """
+    V2: distribution-fit probability — normal CDF around the ensemble mean with
+    σ = V2_FORECAST_SIGMA_F. Replaces the V1 "fraction of ensemble members in
+    target window" calculation, which the May 29-30 diagnostics showed is noise.
+    No post-calibration shrinkage; the distribution-fit output is the final our_prob.
+    """
+    if not temps:
+        return None
+    mean = sum(temps) / len(temps)
+    if direction == "above":
+        return norm_probability_above(mean, threshold_f, sigma=V2_FORECAST_SIGMA_F)
+    elif direction == "below":
+        return norm_probability_below(mean, threshold_f, sigma=V2_FORECAST_SIGMA_F)
+    elif direction == "bucket" and low_f is not None and high_f is not None:
+        return norm_probability_between(mean, low_f, high_f, sigma=V2_FORECAST_SIGMA_F)
     return None
 
 
@@ -242,21 +263,32 @@ def run_cycle():
             print("  Skipping — no forecast data.\n")
             continue
 
-        raw_prob = _estimate(temps, direction, threshold_f, low_f, high_f)
-        if raw_prob is None:
-            print("  Skipping — probability estimate failed.\n")
-            continue
-
-        # Climatology base rate: city- and date-specific historical exceedance rate, used
-        # as the shrinkage anchor for calibration. Falls back to global default if unavailable.
-        base_rate = None
-        if USE_CLIMATOLOGY_BASE_RATE:
-            clim_temps = get_climatology_temps(city["lat"], city["lon"], target_date, city["tz"])
-            base_rate = climatology_base_rate(clim_temps, threshold_f, direction, low_f, high_f)
-            if base_rate is not None:
-                print(f"  Climatology base rate: {base_rate*100:.0f}% (from {len(clim_temps)} historical days)")
-
-        our_prob = calibrate_probability(raw_prob, base_rate=base_rate)
+        # Probability calculation — strategy-dispatched. V1 uses ensemble member
+        # fraction + climatology-anchored calibration; V2 uses distribution-fit
+        # (normal CDF around ensemble mean) with no calibration shrinkage.
+        if STRATEGY_VERSION == "v1":
+            raw_prob = _estimate(temps, direction, threshold_f, low_f, high_f)
+            if raw_prob is None:
+                print("  Skipping — probability estimate failed.\n")
+                continue
+            base_rate = None
+            if USE_CLIMATOLOGY_BASE_RATE:
+                clim_temps = get_climatology_temps(city["lat"], city["lon"], target_date, city["tz"])
+                base_rate = climatology_base_rate(clim_temps, threshold_f, direction, low_f, high_f)
+                if base_rate is not None:
+                    print(f"  Climatology base rate: {base_rate*100:.0f}% (from {len(clim_temps)} historical days)")
+            our_prob = calibrate_probability(raw_prob, base_rate=base_rate)
+            prob_log = f"raw {raw_prob:.2f} → calibrated {our_prob:.2f}"
+        elif STRATEGY_VERSION == "v2":
+            our_prob = _estimate_v2(temps, direction, threshold_f, low_f, high_f)
+            if our_prob is None:
+                print("  Skipping — probability estimate failed.\n")
+                continue
+            mean_f = sum(temps) / len(temps)
+            prob_log = f"dist-fit {our_prob:.2f} (mean={mean_f:.1f}°F, σ={V2_FORECAST_SIGMA_F}°F)"
+            raw_prob = our_prob   # for the log_signal call below; V2 has no separate raw
+        else:
+            raise ValueError(f"Unknown STRATEGY_VERSION: {STRATEGY_VERSION!r}")
 
         # NWS forecast sanity check (informational; not used in math)
         if LOG_NWS_FORECAST:
@@ -275,15 +307,13 @@ def run_cycle():
         edge_yes = our_prob - yes_ask - yes_fee
         edge_no  = (1 - our_prob) - no_ask - no_fee
 
-        print(f"  Our prob: raw {raw_prob:.2f} → calibrated {our_prob:.2f} | Edge YES: {edge_yes:+.2f}  Edge NO: {edge_no:+.2f}")
+        print(f"  Our prob: {prob_log} | Edge YES: {edge_yes:+.2f}  Edge NO: {edge_no:+.2f}")
 
-        if STRATEGY_VERSION == "v1":
-            action, reason = decide_action_v1(edge_yes, edge_no, yes_ask, direction)
-            _print_v1_action(action, reason, edge_yes, edge_no, yes_ask, direction)
-        elif STRATEGY_VERSION == "v2":
-            raise NotImplementedError("STRATEGY_VERSION=v2 selected but v2 logic is not yet implemented.")
-        else:
-            raise ValueError(f"Unknown STRATEGY_VERSION: {STRATEGY_VERSION!r}")
+        # Decision logic is shared between V1 and V2 — only the our_prob calc differs.
+        # All carve-outs (YES disabled, BAN_TAIL_NO_BETS, lean-YES bucket NO,
+        # REDUCED_STAKE_NO_CITIES) are preserved across both strategies.
+        action, reason = decide_action_v1(edge_yes, edge_no, yes_ask, direction)
+        _print_v1_action(action, reason, edge_yes, edge_no, yes_ask, direction)
 
         log_signal(city["name"], ticker, our_prob, yes_ask, edge_yes, action, reason=reason)
 
