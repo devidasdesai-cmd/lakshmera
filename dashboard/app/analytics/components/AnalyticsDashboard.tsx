@@ -156,6 +156,23 @@ function Pnl({ value }: { value: number }) {
   )
 }
 
+function CategoryCell({ cell }: { cell: { n: number; pnl: number } }) {
+  if (cell.n === 0) return <span className="text-gray-300 dark:text-gray-700">—</span>
+  const color = cell.pnl > 0
+    ? 'text-emerald-600 dark:text-emerald-400'
+    : cell.pnl < 0
+    ? 'text-red-600 dark:text-red-400'
+    : 'text-gray-500 dark:text-gray-400'
+  const sign = cell.pnl >= 0 ? '+' : '-'
+  const mag = Math.abs(cell.pnl).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+  return (
+    <span className="inline-flex items-baseline gap-1.5 tabular-nums">
+      <span className="text-gray-500 dark:text-gray-400 text-xs">{cell.n}</span>
+      <span className={`font-medium ${color}`}>{sign}${mag}</span>
+    </span>
+  )
+}
+
 type CalibBin = { mid: number; lo: number; hi: number; n: number; actual: number | null }
 
 function CalibrationPlot({ v1, v2, strategyFilter }: {
@@ -311,6 +328,45 @@ export default function AnalyticsDashboard({ trades }: Props) {
       return { date, ...s, cumulPnl, cumulWins, cumulCount }
     })
   }, [data])
+
+  // 1b — Daily P&L split by category (yes-bucket / yes-tail / no-bucket / no-tail)
+  const dailyByCategory = useMemo(() => {
+    type Cell = { n: number; pnl: number }
+    type Row = { date: string; yesBucket: Cell; yesTail: Cell; noBucket: Cell; noTail: Cell; total: Cell }
+    const empty = (): Cell => ({ n: 0, pnl: 0 })
+    const grouped = new Map<string, Row>()
+    for (const t of data) {
+      if (!t.targetDateStr) continue
+      let row = grouped.get(t.targetDateStr)
+      if (!row) {
+        row = { date: t.targetDateStr, yesBucket: empty(), yesTail: empty(), noBucket: empty(), noTail: empty(), total: empty() }
+        grouped.set(t.targetDateStr, row)
+      }
+      const cell: Cell = t.side === 'yes'
+        ? (t.typeLabel === 'Bucket' ? row.yesBucket : row.yesTail)
+        : (t.typeLabel === 'Bucket' ? row.noBucket : row.noTail)
+      cell.n += 1
+      cell.pnl += t.pnl
+      row.total.n += 1
+      row.total.pnl += t.pnl
+    }
+    return Array.from(grouped.values()).sort((a, b) => b.date.localeCompare(a.date))
+  }, [data])
+
+  // Footer totals row for the category table
+  const dailyByCategoryTotals = useMemo(() => {
+    return dailyByCategory.reduce((acc, r) => ({
+      yesBucket: { n: acc.yesBucket.n + r.yesBucket.n, pnl: acc.yesBucket.pnl + r.yesBucket.pnl },
+      yesTail:   { n: acc.yesTail.n   + r.yesTail.n,   pnl: acc.yesTail.pnl   + r.yesTail.pnl },
+      noBucket:  { n: acc.noBucket.n  + r.noBucket.n,  pnl: acc.noBucket.pnl  + r.noBucket.pnl },
+      noTail:    { n: acc.noTail.n    + r.noTail.n,    pnl: acc.noTail.pnl    + r.noTail.pnl },
+      total:     { n: acc.total.n     + r.total.n,     pnl: acc.total.pnl     + r.total.pnl },
+    }), {
+      yesBucket: { n: 0, pnl: 0 }, yesTail: { n: 0, pnl: 0 },
+      noBucket: { n: 0, pnl: 0 }, noTail: { n: 0, pnl: 0 },
+      total: { n: 0, pnl: 0 },
+    })
+  }, [dailyByCategory])
 
   // 2 — By City
   const byCity = useMemo(() => {
@@ -511,6 +567,56 @@ export default function AnalyticsDashboard({ trades }: Props) {
               </tr>
             ))}
           </tbody>
+        </table>
+      </AnalyticsSection>
+
+      {/* 1b — Daily P&L by category */}
+      <AnalyticsSection title="Daily P&L by Category (YES/NO × Bucket/Tail)">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-gray-200 dark:border-gray-800">
+              <Th>Date</Th>
+              <Th>YES Bucket</Th>
+              <Th>YES Tail</Th>
+              <Th>NO Tail</Th>
+              <Th>NO Bucket</Th>
+              <Th>Daily Total</Th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-200 dark:divide-gray-800/60">
+            {dailyByCategory.map(r => (
+              <tr key={r.date} className="hover:bg-gray-50 dark:hover:bg-gray-800/40 transition-colors">
+                <Td>{r.date}</Td>
+                <Td><CategoryCell cell={r.yesBucket} /></Td>
+                <Td><CategoryCell cell={r.yesTail}   /></Td>
+                <Td><CategoryCell cell={r.noTail}    /></Td>
+                <Td><CategoryCell cell={r.noBucket}  /></Td>
+                <Td>
+                  <span className="inline-flex items-baseline gap-1.5 tabular-nums">
+                    <span className="text-gray-500 dark:text-gray-400 text-xs">{r.total.n}</span>
+                    <Pnl value={r.total.pnl} />
+                  </span>
+                </Td>
+              </tr>
+            ))}
+          </tbody>
+          {dailyByCategory.length > 0 && (
+            <tfoot>
+              <tr className="border-t-2 border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-950">
+                <Td><span className="text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-400">Total</span></Td>
+                <Td><CategoryCell cell={dailyByCategoryTotals.yesBucket} /></Td>
+                <Td><CategoryCell cell={dailyByCategoryTotals.yesTail}   /></Td>
+                <Td><CategoryCell cell={dailyByCategoryTotals.noTail}    /></Td>
+                <Td><CategoryCell cell={dailyByCategoryTotals.noBucket}  /></Td>
+                <Td>
+                  <span className="inline-flex items-baseline gap-1.5 tabular-nums">
+                    <span className="text-gray-500 dark:text-gray-400 text-xs">{dailyByCategoryTotals.total.n}</span>
+                    <Pnl value={dailyByCategoryTotals.total.pnl} />
+                  </span>
+                </Td>
+              </tr>
+            </tfoot>
+          )}
         </table>
       </AnalyticsSection>
 
