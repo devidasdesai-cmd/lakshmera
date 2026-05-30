@@ -22,7 +22,11 @@ interface ET {
   amount:        number
   won:           boolean
   runLabel:      string  // e.g., "12z (11am CT)", "18z (5pm CT)", "Legacy (untagged)"
+  strategy:      string  // 'v1' | 'v2'
+  yesActual:     0 | 1   // for calibration plot — did contract resolve YES?
 }
+
+type StrategyFilter = 'all' | 'v1' | 'v2'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -58,7 +62,10 @@ function enrich(t: Trade): ET {
     : 0
   const typeLabel = typeCode.startsWith('B') ? 'Bucket' : 'Tail'
   const runLabel  = runLabelFor(t.gfs_run)
-  return { city, side: t.side, typeLabel, targetDateStr, placedDate, leadDays, ourProb, mktProb, edge, pnl, amount, won, runLabel }
+  const strategy = t.strategy_version ?? 'v1'
+  // A trade "wins on YES" iff (the bet's side was YES AND it won) OR (side was NO AND it lost) — i.e., contract resolved YES.
+  const yesActual: 0 | 1 = ((t.side === 'yes' && won) || (t.side === 'no' && !won)) ? 1 : 0
+  return { city, side: t.side, typeLabel, targetDateStr, placedDate, leadDays, ourProb, mktProb, edge, pnl, amount, won, runLabel, strategy, yesActual }
 }
 
 function agg(ts: ET[]) {
@@ -149,6 +156,103 @@ function Pnl({ value }: { value: number }) {
   )
 }
 
+type CalibBin = { mid: number; lo: number; hi: number; n: number; actual: number | null }
+
+function CalibrationPlot({ v1, v2, strategyFilter }: {
+  v1: CalibBin[]
+  v2: CalibBin[]
+  strategyFilter: StrategyFilter
+}) {
+  const W = 600, H = 320, PAD_L = 44, PAD_R = 16, PAD_T = 16, PAD_B = 36
+  const PW = W - PAD_L - PAD_R
+  const PH = H - PAD_T - PAD_B
+  const xOf = (p: number) => PAD_L + p * PW
+  const yOf = (p: number) => PAD_T + (1 - p) * PH
+  const showV1 = strategyFilter === 'all' || strategyFilter === 'v1'
+  const showV2 = strategyFilter === 'all' || strategyFilter === 'v2'
+
+  function seriesPath(bins: CalibBin[]) {
+    const pts = bins.filter(b => b.actual !== null).map(b => `${xOf(b.mid).toFixed(1)},${yOf(b.actual!).toFixed(1)}`)
+    return pts.length ? `M ${pts.join(' L ')}` : ''
+  }
+
+  const v1HasData = v1.some(b => b.actual !== null)
+  const v2HasData = v2.some(b => b.actual !== null)
+
+  return (
+    <div className="p-4">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" preserveAspectRatio="xMidYMid meet">
+        {/* Axes */}
+        <line x1={PAD_L} y1={PAD_T} x2={PAD_L} y2={PAD_T + PH} className="stroke-gray-300 dark:stroke-gray-700" strokeWidth="1" />
+        <line x1={PAD_L} y1={PAD_T + PH} x2={PAD_L + PW} y2={PAD_T + PH} className="stroke-gray-300 dark:stroke-gray-700" strokeWidth="1" />
+
+        {/* Gridlines + tick labels (every 25%) */}
+        {[0, 0.25, 0.5, 0.75, 1].map(t => (
+          <g key={t}>
+            <line x1={PAD_L} y1={yOf(t)} x2={PAD_L + PW} y2={yOf(t)} className="stroke-gray-200 dark:stroke-gray-800" strokeWidth="0.5" strokeDasharray="2,2" />
+            <text x={PAD_L - 6} y={yOf(t) + 4} textAnchor="end" className="fill-gray-400 dark:fill-gray-600" fontSize="10">{Math.round(t * 100)}%</text>
+            <line x1={xOf(t)} y1={PAD_T + PH} x2={xOf(t)} y2={PAD_T + PH + 4} className="stroke-gray-300 dark:stroke-gray-700" strokeWidth="1" />
+            <text x={xOf(t)} y={PAD_T + PH + 18} textAnchor="middle" className="fill-gray-400 dark:fill-gray-600" fontSize="10">{Math.round(t * 100)}%</text>
+          </g>
+        ))}
+
+        {/* Perfect-calibration diagonal */}
+        <line x1={xOf(0)} y1={yOf(0)} x2={xOf(1)} y2={yOf(1)} className="stroke-gray-400 dark:stroke-gray-600" strokeWidth="1" strokeDasharray="4,3" />
+
+        {/* V1 series — gray */}
+        {showV1 && v1HasData && (
+          <>
+            <path d={seriesPath(v1)} fill="none" className="stroke-gray-500 dark:stroke-gray-400" strokeWidth="1.5" />
+            {v1.filter(b => b.actual !== null).map((b, i) => (
+              <circle key={`v1-${i}`} cx={xOf(b.mid)} cy={yOf(b.actual!)} r={Math.min(8, 2 + Math.sqrt(b.n))} className="fill-gray-500 dark:fill-gray-400" opacity="0.7">
+                <title>{`V1 · predicted ${Math.round(b.lo * 100)}-${Math.round(b.hi * 100)}% · actual ${(b.actual! * 100).toFixed(1)}% · N=${b.n}`}</title>
+              </circle>
+            ))}
+          </>
+        )}
+
+        {/* V2 series — violet (matches dashboard pill color) */}
+        {showV2 && v2HasData && (
+          <>
+            <path d={seriesPath(v2)} fill="none" className="stroke-violet-500" strokeWidth="2" />
+            {v2.filter(b => b.actual !== null).map((b, i) => (
+              <circle key={`v2-${i}`} cx={xOf(b.mid)} cy={yOf(b.actual!)} r={Math.min(8, 2 + Math.sqrt(b.n))} className="fill-violet-500" opacity="0.85">
+                <title>{`V2 · predicted ${Math.round(b.lo * 100)}-${Math.round(b.hi * 100)}% · actual ${(b.actual! * 100).toFixed(1)}% · N=${b.n}`}</title>
+              </circle>
+            ))}
+          </>
+        )}
+
+        {/* Axis labels */}
+        <text x={PAD_L + PW / 2} y={H - 4} textAnchor="middle" className="fill-gray-500 dark:fill-gray-400" fontSize="11">Predicted YES probability</text>
+        <text x={12} y={PAD_T + PH / 2} textAnchor="middle" transform={`rotate(-90, 12, ${PAD_T + PH / 2})`} className="fill-gray-500 dark:fill-gray-400" fontSize="11">Actual YES rate</text>
+      </svg>
+
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400 mt-2 px-2">
+        {showV1 && (
+          <span className="flex items-center gap-1.5">
+            <svg width="20" height="8"><line x1="0" y1="4" x2="20" y2="4" className="stroke-gray-500 dark:stroke-gray-400" strokeWidth="1.5"/></svg>
+            V1 ({v1.reduce((s, b) => s + b.n, 0)} trades)
+          </span>
+        )}
+        {showV2 && (
+          <span className="flex items-center gap-1.5">
+            <svg width="20" height="8"><line x1="0" y1="4" x2="20" y2="4" className="stroke-violet-500" strokeWidth="2"/></svg>
+            V2 ({v2.reduce((s, b) => s + b.n, 0)} trades)
+          </span>
+        )}
+        <span className="flex items-center gap-1.5">
+          <svg width="20" height="8"><line x1="0" y1="4" x2="20" y2="4" className="stroke-gray-400 dark:stroke-gray-600" strokeWidth="1" strokeDasharray="3,2"/></svg>
+          perfect calibration
+        </span>
+        <span className="ml-auto text-xs italic">
+          Closer to the dashed diagonal = better calibrated. Dot size = sample count.
+        </span>
+      </div>
+    </div>
+  )
+}
+
 function AnalyticsSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden">
@@ -182,7 +286,17 @@ export default function AnalyticsDashboard({ trades }: Props) {
     localStorage.setItem('theme', newDark ? 'dark' : 'light')
   }
 
-  const data = useMemo(() => trades.map(enrich), [trades])
+  const [strategyFilter, setStrategyFilter] = useState<StrategyFilter>('all')
+
+  const allData = useMemo(() => trades.map(enrich), [trades])
+  const data = useMemo(
+    () => strategyFilter === 'all' ? allData : allData.filter(t => t.strategy === strategyFilter),
+    [allData, strategyFilter]
+  )
+
+  // V1 vs V2 counts for the toggle labels
+  const v1Count = useMemo(() => allData.filter(t => t.strategy === 'v1').length, [allData])
+  const v2Count = useMemo(() => allData.filter(t => t.strategy === 'v2').length, [allData])
 
   // 1 — Day-by-Day P&L (by resolution date)
   const dayByDay = useMemo(() => {
@@ -267,6 +381,27 @@ export default function AnalyticsDashboard({ trades }: Props) {
       .map(label => ({ label, ...agg(grouped.get(label)!) }))
   }, [data])
 
+  // 8a — Calibration (predicted YES prob vs actual YES rate, binned). Always uses
+  // allData (not strategy-filtered) so V1 vs V2 can be overlaid; the chart toggles
+  // which series to show based on strategyFilter.
+  const calibration = useMemo(() => {
+    const bins = [
+      [0.00, 0.05], [0.05, 0.10], [0.10, 0.15], [0.15, 0.20],
+      [0.20, 0.30], [0.30, 0.40], [0.40, 0.50], [0.50, 0.70], [0.70, 1.01],
+    ] as const
+    function bin(rows: ET[]) {
+      return bins.map(([lo, hi]) => {
+        const sub = rows.filter(r => r.ourProb >= lo && r.ourProb < hi)
+        const actual = sub.length ? sub.reduce((s, r) => s + r.yesActual, 0) / sub.length : null
+        return { mid: (lo + hi) / 2, lo, hi, n: sub.length, actual }
+      })
+    }
+    return {
+      v1: bin(allData.filter(t => t.strategy === 'v1')),
+      v2: bin(allData.filter(t => t.strategy === 'v2')),
+    }
+  }, [allData])
+
   // 8 — Running Win Rate (by bet placement date)
   const running = useMemo(() => {
     const grouped = groupBy(data, t => t.placedDate)
@@ -299,7 +434,10 @@ export default function AnalyticsDashboard({ trades }: Props) {
             ← Dashboard
           </Link>
           <h1 className="text-xl font-bold tracking-tight text-gray-900 dark:text-white mt-1">ANALYTICS</h1>
-          <p className="text-sm text-gray-500 mt-0.5">{data.length} settled trades</p>
+          <p className="text-sm text-gray-500 mt-0.5">
+            {data.length} settled trades
+            {strategyFilter !== 'all' && <span className="text-gray-400 dark:text-gray-600"> (filtered to {strategyFilter})</span>}
+          </p>
         </div>
         <button
           onClick={toggleTheme}
@@ -325,6 +463,33 @@ export default function AnalyticsDashboard({ trades }: Props) {
           )}
         </button>
       </div>
+
+      {/* Strategy filter */}
+      <div className="flex items-center gap-2 text-sm">
+        <span className="text-xs text-gray-500 uppercase tracking-wider mr-1">Strategy</span>
+        {([
+          { v: 'all', label: `All (${allData.length})` },
+          { v: 'v1',  label: `V1 (${v1Count})` },
+          { v: 'v2',  label: `V2 (${v2Count})` },
+        ] as { v: StrategyFilter; label: string }[]).map(opt => (
+          <button
+            key={opt.v}
+            onClick={() => setStrategyFilter(opt.v)}
+            className={`px-3 py-1 rounded-md text-xs font-medium transition-colors border ${
+              strategyFilter === opt.v
+                ? 'bg-gray-900 dark:bg-white text-white dark:text-gray-900 border-gray-900 dark:border-white'
+                : 'bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-800 hover:border-gray-400 dark:hover:border-gray-600'
+            }`}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Calibration plot — always shows both V1 and V2 overlaid (independent of filter) */}
+      <AnalyticsSection title="Calibration — Predicted YES probability vs actual YES rate">
+        <CalibrationPlot v1={calibration.v1} v2={calibration.v2} strategyFilter={strategyFilter} />
+      </AnalyticsSection>
 
       {/* 1 — Day-by-Day P&L */}
       <AnalyticsSection title="Day-by-Day P&L (by Resolution Date)">

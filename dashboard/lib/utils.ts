@@ -26,6 +26,56 @@ export interface Signal {
   created_at: string
 }
 
+export interface Health {
+  last_signal_at: string | null
+  signals_today: string
+  runs_today: string
+}
+
+// Days between two YYYY-MM-DD date strings (b - a). NaN-safe.
+export function daysBetween(a: string, b: string): number {
+  const da = new Date(a + 'T00:00:00Z').getTime()
+  const db = new Date(b + 'T00:00:00Z').getTime()
+  if (isNaN(da) || isNaN(db)) return 0
+  return Math.round((db - da) / 86400000)
+}
+
+// Today's date in UTC as YYYY-MM-DD.
+export function todayUtc(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+
+// "5h 12m ago" / "2m ago" / "just now" / "3d ago"
+export function timeAgo(isoTs: string | null): string {
+  if (!isoTs) return 'never'
+  const then = new Date(isoTs).getTime()
+  const now = Date.now()
+  let s = Math.max(0, Math.floor((now - then) / 1000))
+  if (s < 60) return 'just now'
+  const m = Math.floor(s / 60); s -= m * 60
+  if (m < 60) return `${m}m ago`
+  const h = Math.floor(m / 60)
+  const remM = m - h * 60
+  if (h < 24) return remM > 0 ? `${h}h ${remM}m ago` : `${h}h ago`
+  const d = Math.floor(h / 24)
+  return `${d}d ago`
+}
+
+// SVG polyline `points` attribute for a sparkline. Values is array of numbers,
+// width/height in svg coords. Auto-fits to min/max with 5% padding.
+export function sparklinePoints(values: number[], width: number, height: number): string {
+  if (values.length < 2) return ''
+  const min = Math.min(...values)
+  const max = Math.max(...values)
+  const range = max - min || 1
+  const pad = height * 0.05
+  return values.map((v, i) => {
+    const x = (i / (values.length - 1)) * width
+    const y = height - pad - ((v - min) / range) * (height - pad * 2)
+    return `${x.toFixed(1)},${y.toFixed(1)}`
+  }).join(' ')
+}
+
 export const SERIES_TO_CITY: Record<string, string> = {
   KXHIGHTDAL:  'Dallas',
   KXHIGHTHOU:  'Houston',

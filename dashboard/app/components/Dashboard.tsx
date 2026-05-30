@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import Link from 'next/link'
-import { Trade, Signal, parseTicker, pct, dollars, currency, SERIES_TO_CITY } from '../../lib/utils'
+import { Trade, Signal, Health, parseTicker, pct, dollars, currency, SERIES_TO_CITY, todayUtc, daysBetween, timeAgo, sparklinePoints } from '../../lib/utils'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -11,6 +11,54 @@ interface Props {
   settled: Trade[]
   active:  Trade[]
   signals: Signal[]
+  health:  Health
+}
+
+// --- Rolling-window aggregator: sums P&L for trades within last `days` of `today` ---
+function rollingPnlByDay(trades: { pnl: string | null; targetDateStr: string }[], days: number, today: string): number[] {
+  const out: number[] = new Array(days).fill(0)
+  for (const t of trades) {
+    if (!t.targetDateStr) continue
+    const offset = daysBetween(t.targetDateStr, today)
+    if (offset >= 0 && offset < days) {
+      out[days - 1 - offset] += parseFloat(t.pnl ?? '0')
+    }
+  }
+  // Cumulative for sparkline
+  let acc = 0
+  return out.map(v => (acc += v))
+}
+
+// --- Cron schedule (mirrors dashboard/vercel.json + .github/workflows/bot.yml) ---
+const CRON_SCHEDULE_UTC = [
+  { hour: 11, minute: 16, source: 'GitHub' },
+  { hour: 16, minute: 37, source: 'Vercel' },
+  { hour: 23, minute: 37, source: 'Vercel' },
+]
+
+function nextCronAt(now: Date): { iso: string; label: string } {
+  const nowMs = now.getTime()
+  let bestMs = Infinity
+  let bestLabel = ''
+  for (let dayOffset = 0; dayOffset <= 1; dayOffset++) {
+    for (const c of CRON_SCHEDULE_UTC) {
+      const t = new Date(Date.UTC(
+        now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + dayOffset,
+        c.hour, c.minute, 0
+      ))
+      const ms = t.getTime()
+      if (ms > nowMs && ms < bestMs) {
+        bestMs = ms
+        bestLabel = `${String(c.hour).padStart(2, '0')}:${String(c.minute).padStart(2, '0')} UTC`
+      }
+    }
+  }
+  if (!isFinite(bestMs)) return { iso: '', label: '' }
+  const mins = Math.floor((bestMs - nowMs) / 60000)
+  const h = Math.floor(mins / 60)
+  const m = mins - h * 60
+  const inLabel = h > 0 ? `${h}h ${m}m` : `${m}m`
+  return { iso: new Date(bestMs).toISOString(), label: `${bestLabel} (in ${inLabel})` }
 }
 
 type SortDir   = 'asc' | 'desc'
@@ -160,9 +208,52 @@ function Empty({ children }: { children: React.ReactNode }) {
   return <div className="px-4 py-10 text-center text-sm text-gray-400 dark:text-gray-600">{children}</div>
 }
 
+function HeroCard({ label, value, subtitle, tone, spark, progress }: {
+  label: string
+  value: string
+  subtitle: string
+  tone: 'positive' | 'negative' | 'neutral'
+  spark?: number[]
+  progress?: number   // 0..1, only rendered when present
+}) {
+  const valueColor =
+    tone === 'positive' ? 'text-emerald-600 dark:text-emerald-400'
+    : tone === 'negative' ? 'text-red-600 dark:text-red-400'
+    : 'text-gray-900 dark:text-white'
+  const sparkStroke =
+    tone === 'positive' ? 'stroke-emerald-500'
+    : tone === 'negative' ? 'stroke-red-500'
+    : 'stroke-sky-500'
+  return (
+    <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-4 relative overflow-hidden">
+      <p className="text-xs text-gray-500 uppercase tracking-wider">{label}</p>
+      <p className={`text-2xl font-bold tabular-nums mt-1 ${valueColor}`}>{value}</p>
+      <p className="text-xs text-gray-400 dark:text-gray-600 mt-1">{subtitle}</p>
+      {spark && spark.length >= 2 && (
+        <svg viewBox="0 0 100 24" preserveAspectRatio="none" className="absolute bottom-1 right-1 w-20 h-6 opacity-50 pointer-events-none">
+          <polyline
+            fill="none"
+            strokeWidth="1.5"
+            className={sparkStroke}
+            points={sparklinePoints(spark, 100, 24)}
+          />
+        </svg>
+      )}
+      {progress !== undefined && (
+        <div className="mt-2 h-1 bg-gray-100 dark:bg-gray-800 rounded overflow-hidden">
+          <div
+            className={`h-full rounded ${tone === 'negative' ? 'bg-red-400 dark:bg-red-500' : 'bg-emerald-500 dark:bg-emerald-400'}`}
+            style={{ width: `${Math.max(0, Math.min(100, progress * 100))}%` }}
+          />
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
 
-export default function Dashboard({ settled, active, signals }: Props) {
+export default function Dashboard({ settled, active, signals, health }: Props) {
 
   // Theme
   const [isDark, setIsDark] = useState(true)
@@ -248,6 +339,45 @@ export default function Dashboard({ settled, active, signals }: Props) {
 
   const filtersActive = !!(fromDate || toDate || city)
 
+  // ── Rolling-window metrics (today / 7d / 30d) — for the hero row ──
+  const today = todayUtc()
+  const todayPnl   = enrichedSettled
+    .filter(t => t.targetDateStr === today)
+    .reduce((s, t) => s + parseFloat(t.pnl ?? '0'), 0)
+  const todayCount = enrichedSettled.filter(t => t.targetDateStr === today).length
+  const todayWins  = enrichedSettled.filter(t => t.targetDateStr === today && parseFloat(t.pnl ?? '0') > 0).length
+  const series14 = rollingPnlByDay(enrichedSettled, 14, today)
+  const series30 = rollingPnlByDay(enrichedSettled, 30, today)
+  const last7Pnl  = series14[13] - (series14[6] ?? 0)
+  const last30Pnl = series30[29]
+  const TARGET_MONTHLY = 2000
+
+  // ── V1 vs V2 attribution ──
+  const v1Settled = enrichedSettled.filter(t => (t.strategy_version ?? 'v1') === 'v1')
+  const v2Settled = enrichedSettled.filter(t => t.strategy_version === 'v2')
+  function strategyStats(arr: typeof enrichedSettled) {
+    const n = arr.length
+    const wins = arr.filter(t => parseFloat(t.pnl ?? '0') > 0).length
+    const pnl  = arr.reduce((s, t) => s + parseFloat(t.pnl ?? '0'), 0)
+    return { n, wins, pnl, wr: n ? wins / n * 100 : 0, avg: n ? pnl / n : 0 }
+  }
+  const v1Stat = strategyStats(v1Settled)
+  const v2Stat = strategyStats(v2Settled)
+  const v2Ready = v2Stat.n >= 50   // threshold from May 30 ship memo
+  const v2Better = v2Ready && (v2Stat.pnl > v1Stat.pnl) && (v2Stat.wr >= v1Stat.wr - 5)
+
+  // ── Bot health ──
+  const now = new Date()
+  const lastSignalAgoMs = health.last_signal_at
+    ? now.getTime() - new Date(health.last_signal_at).getTime()
+    : Infinity
+  const lastSignalHours = lastSignalAgoMs / 3600000
+  const healthStatus: 'ok' | 'warn' | 'critical' =
+    lastSignalHours <= 8 ? 'ok' : lastSignalHours <= 24 ? 'warn' : 'critical'
+  const next = nextCronAt(now)
+  const runsToday = parseInt(health.runs_today, 10) || 0
+  const signalsToday = parseInt(health.signals_today, 10) || 0
+
   return (
     <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-6">
 
@@ -291,6 +421,123 @@ export default function Dashboard({ settled, active, signals }: Props) {
             PAPER TRADING
           </span>
         </div>
+      </div>
+
+      {/* Bot health strip */}
+      <div className={`rounded-lg px-4 py-2.5 text-xs flex flex-wrap items-center gap-x-5 gap-y-1 ${
+        healthStatus === 'ok'
+          ? 'bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800'
+          : healthStatus === 'warn'
+          ? 'bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800'
+          : 'bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800'
+      }`}>
+        <span className="flex items-center gap-1.5">
+          <span className={`inline-block w-2 h-2 rounded-full ${
+            healthStatus === 'ok' ? 'bg-emerald-500' : healthStatus === 'warn' ? 'bg-amber-500' : 'bg-red-500'
+          }`}></span>
+          <span className="font-semibold uppercase tracking-wider">
+            {healthStatus === 'ok' ? 'Bot healthy' : healthStatus === 'warn' ? 'Bot lagging' : 'Bot stalled'}
+          </span>
+        </span>
+        <span className="text-gray-600 dark:text-gray-300">
+          Last signal: <span className="font-mono">{timeAgo(health.last_signal_at)}</span>
+        </span>
+        <span className="text-gray-600 dark:text-gray-300">
+          Next cron: <span className="font-mono">{next.label || '—'}</span>
+        </span>
+        <span className="text-gray-600 dark:text-gray-300">
+          Today: <span className="font-mono">{runsToday}</span> run{runsToday === 1 ? '' : 's'},{' '}
+          <span className="font-mono">{signalsToday}</span> signals
+        </span>
+      </div>
+
+      {/* Hero metrics: today / 7d / 30d / open positions risk + sparklines */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <HeroCard
+          label="Today's P&L"
+          value={dollars(todayPnl)}
+          subtitle={todayCount > 0 ? `${todayWins}W · ${todayCount - todayWins}L` : 'no settlements yet'}
+          tone={todayPnl >= 0 ? 'positive' : 'negative'}
+          spark={series14}
+        />
+        <HeroCard
+          label="7-day P&L"
+          value={dollars(last7Pnl)}
+          subtitle="rolling week"
+          tone={last7Pnl >= 0 ? 'positive' : 'negative'}
+          spark={series14}
+        />
+        <HeroCard
+          label="30-day P&L"
+          value={dollars(last30Pnl)}
+          subtitle={`${Math.round(Math.max(0, last30Pnl) / TARGET_MONTHLY * 100)}% of $${TARGET_MONTHLY.toLocaleString()} target`}
+          tone={last30Pnl >= 0 ? 'positive' : 'negative'}
+          spark={series30}
+          progress={Math.max(0, Math.min(1, last30Pnl / TARGET_MONTHLY))}
+        />
+        <HeroCard
+          label="Capital at risk now"
+          value={currency(openDeployed)}
+          subtitle={`${enrichedActive.length} open position${enrichedActive.length === 1 ? '' : 's'}`}
+          tone="neutral"
+        />
+      </div>
+
+      {/* V1 vs V2 attribution */}
+      <div>
+        <p className="text-xs text-gray-400 dark:text-gray-600 uppercase tracking-wider mb-2 px-0.5">
+          Strategy attribution {v2Ready ? `· V2 ready (${v2Stat.n} settled)` : `· V2 still collecting (${v2Stat.n} / 50 settled)`}
+        </p>
+        <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50 dark:bg-gray-950 text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                <th className="px-4 py-2 text-left font-medium"></th>
+                <th className="px-4 py-2 text-right font-medium">Settled</th>
+                <th className="px-4 py-2 text-right font-medium">Wins</th>
+                <th className="px-4 py-2 text-right font-medium">Win rate</th>
+                <th className="px-4 py-2 text-right font-medium">Total P&L</th>
+                <th className="px-4 py-2 text-right font-medium">Avg / trade</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200 dark:divide-gray-800/60">
+              {[
+                { label: 'V1 (legacy: ensemble fraction + α=0.5)', stat: v1Stat, isWinner: v2Ready && !v2Better },
+                { label: 'V2 (live since May 30: distribution-fit, σ=1.5°F)', stat: v2Stat, isWinner: v2Ready && v2Better },
+              ].map(row => (
+                <tr key={row.label} className={row.isWinner ? 'bg-emerald-50/50 dark:bg-emerald-950/20' : ''}>
+                  <td className="px-4 py-2.5 text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                    <span className={`text-xs font-medium px-1.5 py-0.5 rounded border ${
+                      row.label.startsWith('V1')
+                        ? 'bg-gray-50 dark:bg-gray-900 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700'
+                        : 'bg-violet-50 dark:bg-violet-950 text-violet-600 dark:text-violet-400 border-violet-200 dark:border-violet-800'
+                    }`}>
+                      {row.label.startsWith('V1') ? 'v1' : 'v2'}
+                    </span>
+                    <span className="text-xs text-gray-500 dark:text-gray-500">{row.label.split(': ')[1]?.replace(')', '') ?? ''}</span>
+                    {row.isWinner && (
+                      <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 ml-1">▲ leading</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-2.5 text-right tabular-nums font-mono text-xs text-gray-700 dark:text-gray-300">{row.stat.n}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums font-mono text-xs text-gray-700 dark:text-gray-300">{row.stat.wins}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums font-mono text-xs text-gray-700 dark:text-gray-300">{row.stat.n ? `${row.stat.wr.toFixed(1)}%` : '—'}</td>
+                  <td className={`px-4 py-2.5 text-right tabular-nums font-medium ${row.stat.pnl >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                    {row.stat.n ? dollars(row.stat.pnl) : '—'}
+                  </td>
+                  <td className={`px-4 py-2.5 text-right tabular-nums font-mono text-xs ${row.stat.avg >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                    {row.stat.n ? `${row.stat.avg >= 0 ? '+' : ''}$${row.stat.avg.toFixed(2)}` : '—'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {!v2Ready && (
+          <p className="text-xs text-gray-400 dark:text-gray-600 mt-1.5 px-0.5">
+            Wait for V2 to reach 50 settled trades before reading attribution as decisive.
+          </p>
+        )}
       </div>
 
       {/* Capital flow — always unfiltered */}

@@ -5,7 +5,7 @@ import Dashboard from './components/Dashboard'
 export const dynamic = 'force-dynamic'
 
 export default async function Page() {
-  const [settled, active, signals] = await Promise.all([
+  const [settled, active, signals, healthRow] = await Promise.all([
     sql<Trade>(`
       SELECT id, ticker, side, amount_usd, contract_count, price_paid,
              our_probability, market_probability, result, pnl,
@@ -30,7 +30,17 @@ export default async function Page() {
       ORDER BY created_at DESC
       LIMIT 200
     `),
+    sql<{ last_signal_at: string | null; signals_today: string; runs_today: string }>(`
+      SELECT
+        MAX(created_at)::text AS last_signal_at,
+        COUNT(*) FILTER (WHERE created_at >= (NOW() AT TIME ZONE 'UTC')::date)::text AS signals_today,
+        COUNT(DISTINCT date_trunc('hour', created_at))
+          FILTER (WHERE created_at >= NOW() - INTERVAL '24 hours')::text AS runs_today
+      FROM signals
+    `),
   ])
 
-  return <Dashboard settled={settled} active={active} signals={signals} />
+  const health = healthRow[0] ?? { last_signal_at: null, signals_today: '0', runs_today: '0' }
+
+  return <Dashboard settled={settled} active={active} signals={signals} health={health} />
 }
