@@ -156,20 +156,178 @@ function Pnl({ value }: { value: number }) {
   )
 }
 
-function CategoryCell({ cell }: { cell: { n: number; pnl: number } }) {
-  if (cell.n === 0) return <span className="text-gray-300 dark:text-gray-700">—</span>
-  const color = cell.pnl > 0
-    ? 'text-emerald-600 dark:text-emerald-400'
-    : cell.pnl < 0
-    ? 'text-red-600 dark:text-red-400'
-    : 'text-gray-500 dark:text-gray-400'
-  const sign = cell.pnl >= 0 ? '+' : '-'
-  const mag = Math.abs(cell.pnl).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+type Cat = 'yesBucket' | 'yesTail' | 'noBucket' | 'noTail'
+type DailyRow = {
+  date: string
+  yesBucket: { n: number; pnl: number }
+  yesTail:   { n: number; pnl: number }
+  noBucket:  { n: number; pnl: number }
+  noTail:    { n: number; pnl: number }
+  total:     { n: number; pnl: number }
+}
+type DailyTotals = Omit<DailyRow, 'date'>
+
+const CAT_META: { key: Cat; label: string; fillClass: string; bg: string; text: string }[] = [
+  // Order matters for stacking (largest contributor last → drawn on top)
+  { key: 'noBucket',  label: 'NO Bucket',  fillClass: 'fill-emerald-500', bg: 'bg-emerald-500', text: 'text-emerald-600 dark:text-emerald-400' },
+  { key: 'noTail',    label: 'NO Tail',    fillClass: 'fill-sky-500',     bg: 'bg-sky-500',     text: 'text-sky-600 dark:text-sky-400' },
+  { key: 'yesBucket', label: 'YES Bucket', fillClass: 'fill-amber-400',   bg: 'bg-amber-400',   text: 'text-amber-600 dark:text-amber-400' },
+  { key: 'yesTail',   label: 'YES Tail',   fillClass: 'fill-rose-500',    bg: 'bg-rose-500',    text: 'text-rose-600 dark:text-rose-400' },
+]
+
+function DailyCategoryChart({ rows, totals }: { rows: DailyRow[]; totals: DailyTotals }) {
+  // rows arrive newest-first; for time-series, plot oldest→newest left-to-right.
+  // Show only the last 30 days of activity to keep bars readable.
+  const visible = rows.slice(0, 30).slice().reverse()
+  const [hover, setHover] = useState<number | null>(null)
+
+  const PAD_L = 56, PAD_R = 16, PAD_T = 16, PAD_B = 42
+  const BAR_W = 22, BAR_GAP = 6
+  const PW = Math.max(visible.length * (BAR_W + BAR_GAP), 280)
+  const PH = 240
+  const W = PAD_L + PW + PAD_R
+  const H = PAD_T + PH + PAD_B
+
+  // Compute axis range across all days
+  let maxPos = 0, maxNeg = 0
+  for (const r of visible) {
+    let pos = 0, neg = 0
+    for (const m of CAT_META) {
+      const v = r[m.key].pnl
+      if (v > 0) pos += v
+      else if (v < 0) neg += -v
+    }
+    if (pos > maxPos) maxPos = pos
+    if (neg > maxNeg) maxNeg = neg
+  }
+  // Round up to nice numbers
+  function ceilNice(v: number): number {
+    if (v === 0) return 100
+    const mag = Math.pow(10, Math.floor(Math.log10(v)))
+    const norm = v / mag
+    const r = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10
+    return r * mag
+  }
+  const yMax = ceilNice(Math.max(maxPos, 100))
+  const yMin = -ceilNice(Math.max(maxNeg, 100))
+  const yOf = (v: number) => PAD_T + ((yMax - v) / (yMax - yMin)) * PH
+
+  // Y-axis ticks — 5 evenly spaced
+  const ticks: number[] = []
+  for (let i = 0; i <= 4; i++) {
+    ticks.push(yMin + (yMax - yMin) * (i / 4))
+  }
+
+  if (visible.length === 0) {
+    return <div className="p-6 text-center text-sm text-gray-400 dark:text-gray-600">No settled trades to chart yet.</div>
+  }
+
   return (
-    <span className="inline-flex items-baseline gap-1.5 tabular-nums">
-      <span className="text-gray-500 dark:text-gray-400 text-xs">{cell.n}</span>
-      <span className={`font-medium ${color}`}>{sign}${mag}</span>
-    </span>
+    <div className="p-4">
+      <div className="overflow-x-auto">
+        <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} preserveAspectRatio="xMinYMid meet" className="block max-w-full" style={{ minWidth: '320px' }}>
+          {/* Y gridlines + labels */}
+          {ticks.map(t => (
+            <g key={t}>
+              <line x1={PAD_L} y1={yOf(t)} x2={PAD_L + PW} y2={yOf(t)} className={t === 0 ? 'stroke-gray-400 dark:stroke-gray-600' : 'stroke-gray-200 dark:stroke-gray-800'} strokeWidth={t === 0 ? '1' : '0.5'} strokeDasharray={t === 0 ? undefined : '2,2'} />
+              <text x={PAD_L - 6} y={yOf(t) + 4} textAnchor="end" className="fill-gray-400 dark:fill-gray-600" fontSize="10">
+                {t === 0 ? '$0' : (t > 0 ? '+' : '−') + '$' + Math.abs(t).toLocaleString('en-US')}
+              </text>
+            </g>
+          ))}
+
+          {/* Daily stacks */}
+          {visible.map((r, i) => {
+            const x = PAD_L + i * (BAR_W + BAR_GAP) + BAR_GAP / 2
+            // Render positive segments stacked above zero, negative below.
+            // Stacking order = CAT_META order (NO Bucket at bottom of each stack)
+            let posCursor = 0
+            let negCursor = 0
+            const segs = CAT_META.map(m => {
+              const v = r[m.key].pnl
+              if (v === 0) return null
+              if (v > 0) {
+                const y1 = yOf(posCursor + v)
+                const y2 = yOf(posCursor)
+                posCursor += v
+                return <rect key={m.key} x={x} y={y1} width={BAR_W} height={Math.max(1, y2 - y1)} className={m.fillClass} />
+              } else {
+                const y1 = yOf(negCursor)
+                const y2 = yOf(negCursor + v)   // v is negative
+                negCursor += v
+                return <rect key={m.key} x={x} y={y1} width={BAR_W} height={Math.max(1, y2 - y1)} className={m.fillClass} />
+              }
+            })
+            return (
+              <g key={r.date}
+                onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}
+                style={{ cursor: 'pointer' }}>
+                {/* Hover hit-area (transparent rect spanning full chart height for the column) */}
+                <rect x={x - BAR_GAP/2} y={PAD_T} width={BAR_W + BAR_GAP} height={PH}
+                  className={hover === i ? 'fill-gray-100 dark:fill-gray-800' : 'fill-transparent'}
+                  opacity={hover === i ? 0.4 : 0}
+                />
+                {segs}
+                {/* x-axis tick label every ~5 days */}
+                {(i % 5 === 0 || i === visible.length - 1) && (
+                  <text x={x + BAR_W / 2} y={PAD_T + PH + 14} textAnchor="middle" className="fill-gray-500 dark:fill-gray-400" fontSize="9">
+                    {r.date.slice(5)}
+                  </text>
+                )}
+                <title>{`${r.date}\nTotal: ${r.total.pnl >= 0 ? '+' : '−'}$${Math.abs(r.total.pnl).toFixed(0)} (${r.total.n} bets)\n` +
+                  CAT_META.filter(m => r[m.key].n > 0).map(m => `${m.label}: ${r[m.key].n} bet${r[m.key].n === 1 ? '' : 's'}, ${r[m.key].pnl >= 0 ? '+' : '−'}$${Math.abs(r[m.key].pnl).toFixed(0)}`).join('\n')}</title>
+              </g>
+            )
+          })}
+
+          {/* X-axis label */}
+          <text x={PAD_L + PW / 2} y={H - 6} textAnchor="middle" className="fill-gray-500 dark:fill-gray-400" fontSize="11">
+            Settlement date · last {visible.length} day{visible.length === 1 ? '' : 's'}
+          </text>
+        </svg>
+      </div>
+
+      {/* Hovered-day detail */}
+      {hover !== null && visible[hover] && (
+        <div className="mt-2 px-3 py-2 bg-gray-50 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded text-xs">
+          <span className="font-semibold text-gray-700 dark:text-gray-300 mr-3">{visible[hover].date}</span>
+          <span className="text-gray-500 dark:text-gray-400 mr-2">Total:</span>
+          <span className={`font-semibold tabular-nums mr-4 ${visible[hover].total.pnl >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+            {dollars(visible[hover].total.pnl)} <span className="text-gray-400 dark:text-gray-600 font-normal">({visible[hover].total.n} bet{visible[hover].total.n === 1 ? '' : 's'})</span>
+          </span>
+          {CAT_META.filter(m => visible[hover]![m.key].n > 0).map(m => (
+            <span key={m.key} className="mr-3 inline-flex items-center gap-1.5">
+              <span className={`inline-block w-2 h-2 rounded ${m.bg}`}></span>
+              <span className="text-gray-600 dark:text-gray-400">{m.label}:</span>
+              <span className={`font-mono tabular-nums ${m.text}`}>
+                {visible[hover]![m.key].n}× {dollars(visible[hover]![m.key].pnl)}
+              </span>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Per-category totals (whole window) */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
+        {CAT_META.map(m => {
+          const cell = totals[m.key]
+          return (
+            <div key={m.key} className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded p-3">
+              <div className="flex items-center gap-2 mb-1">
+                <span className={`inline-block w-2.5 h-2.5 rounded ${m.bg}`}></span>
+                <span className="text-xs font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wider">{m.label}</span>
+              </div>
+              <div className="flex items-baseline justify-between">
+                <span className="text-xs text-gray-500 dark:text-gray-400">{cell.n} bet{cell.n === 1 ? '' : 's'}</span>
+                <span className={`text-lg font-bold tabular-nums ${cell.pnl > 0 ? 'text-emerald-600 dark:text-emerald-400' : cell.pnl < 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-400 dark:text-gray-600'}`}>
+                  {cell.n === 0 ? '—' : dollars(cell.pnl)}
+                </span>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
   )
 }
 
@@ -570,54 +728,9 @@ export default function AnalyticsDashboard({ trades }: Props) {
         </table>
       </AnalyticsSection>
 
-      {/* 1b — Daily P&L by category */}
-      <AnalyticsSection title="Daily P&L by Category (YES/NO × Bucket/Tail)">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-gray-200 dark:border-gray-800">
-              <Th>Date</Th>
-              <Th>YES Bucket</Th>
-              <Th>YES Tail</Th>
-              <Th>NO Tail</Th>
-              <Th>NO Bucket</Th>
-              <Th>Daily Total</Th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200 dark:divide-gray-800/60">
-            {dailyByCategory.map(r => (
-              <tr key={r.date} className="hover:bg-gray-50 dark:hover:bg-gray-800/40 transition-colors">
-                <Td>{r.date}</Td>
-                <Td><CategoryCell cell={r.yesBucket} /></Td>
-                <Td><CategoryCell cell={r.yesTail}   /></Td>
-                <Td><CategoryCell cell={r.noTail}    /></Td>
-                <Td><CategoryCell cell={r.noBucket}  /></Td>
-                <Td>
-                  <span className="inline-flex items-baseline gap-1.5 tabular-nums">
-                    <span className="text-gray-500 dark:text-gray-400 text-xs">{r.total.n}</span>
-                    <Pnl value={r.total.pnl} />
-                  </span>
-                </Td>
-              </tr>
-            ))}
-          </tbody>
-          {dailyByCategory.length > 0 && (
-            <tfoot>
-              <tr className="border-t-2 border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-950">
-                <Td><span className="text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-400">Total</span></Td>
-                <Td><CategoryCell cell={dailyByCategoryTotals.yesBucket} /></Td>
-                <Td><CategoryCell cell={dailyByCategoryTotals.yesTail}   /></Td>
-                <Td><CategoryCell cell={dailyByCategoryTotals.noTail}    /></Td>
-                <Td><CategoryCell cell={dailyByCategoryTotals.noBucket}  /></Td>
-                <Td>
-                  <span className="inline-flex items-baseline gap-1.5 tabular-nums">
-                    <span className="text-gray-500 dark:text-gray-400 text-xs">{dailyByCategoryTotals.total.n}</span>
-                    <Pnl value={dailyByCategoryTotals.total.pnl} />
-                  </span>
-                </Td>
-              </tr>
-            </tfoot>
-          )}
-        </table>
+      {/* 1b — Daily settlement P&L by bet type (stacked diverging bar chart) */}
+      <AnalyticsSection title="Daily Settlement P&L by Bet Type">
+        <DailyCategoryChart rows={dailyByCategory} totals={dailyByCategoryTotals} />
       </AnalyticsSection>
 
       {/* 2 — By City */}
