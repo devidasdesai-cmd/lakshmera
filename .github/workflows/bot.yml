@@ -2,16 +2,22 @@ name: Lakshmera Weather Bot
 
 on:
   schedule:
-    # Two best-effort backup schedules. The primary trading runs come from
-    # Vercel Cron (dashboard/vercel.json) at 16:37 UTC and 23:37 UTC, but
-    # Vercel Cron silently skipped a full day on 2026-05-30 — no trades for
-    # 2026-05-31 contracts as a result. GitHub Actions native schedules are
-    # also unreliable (typical 0-3h delay) but at least they fail noisily.
+    # Best-effort backup schedules. Primary trading runs come from Vercel Cron
+    # (dashboard/vercel.json) at 10:30 UTC and 16:30 UTC, but Vercel silently
+    # skipped a full day on 2026-05-30, so we keep redundant GitHub schedules.
+    # GitHub Actions cron is unreliable (typical 0-3h delay) but at least fails
+    # noisily — we can see missed runs in the Actions tab.
     #
     # Minute offset 16 chosen to avoid the GitHub Actions queue rush at
     # :00 / :15 / :30 / :45.
-    - cron: "16 11 * * *"   # 11:16 UTC = 6:16 AM CT  → catches morning settlements
-    - cron: "16 17 * * *"   # 17:16 UTC = 12:16 PM CT → backup for Vercel 16:37 UTC
+    #
+    # Avoid scheduling between 22-03 UTC: the bot's _current_gfs_run() tags
+    # those hours as "18z", which triggers the min_target_date = today+2
+    # special case in trader.py. Kalshi doesn't list 2-day-out contracts, so
+    # 18z-tagged runs find zero actionable markets.
+    - cron: "16 4 * * *"    # 04:16 UTC = 11:16 PM CT → 00z forecast, overnight, quietest market
+    - cron: "16 11 * * *"   # 11:16 UTC = 6:16 AM CT  → catches morning settlements; partly redundant with 10:30 UTC Vercel
+    - cron: "16 17 * * *"   # 17:16 UTC = 12:16 PM CT → backup for Vercel 16:30 UTC
   workflow_dispatch: # Manual trigger; also used by Vercel Cron via workflow_dispatch API
 
 jobs:
