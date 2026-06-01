@@ -52,8 +52,13 @@ REDUCED_STAKE_NO_CAP_USD = 50
 ALLOW_CHEAP_TAIL_YES_THROUGH_SUSPICIOUS = False
 CHEAP_TAIL_YES_MAX_PRICE = 0.05  # Retained for revert; unused while the flag above is False.
 
-# Rain bets stay at base $100 stake; no settled rain data yet to size up confidently.
-MAX_RAIN_BET_SIZE_USD = 100
+# Rain bets capped at $50 (was $100) starting 2026-06-01. Rationale: May 2026
+# hypothetical analysis showed +$502 / 38% ROI on the May 11-31 blocked signals
+# (see project_jun01_rain_uncapped.md), with WR at 69% — borderline on the
+# 70% commit threshold. Smaller stake reduces downside while we collect 1-2
+# months of forward validation. Re-raise to $100 if June + July rain trading
+# both deliver ≥70% WR with positive P&L.
+MAX_RAIN_BET_SIZE_USD = 50
 
 # --- Strategy switch ---
 # "v1" = original logic (GFS+ECMWF ensemble member fraction + α=0.5 shrinkage).
@@ -187,7 +192,14 @@ RAIN_SERIES_TO_CITY = {
 }
 
 RAIN_TARGET_SERIES = list(RAIN_SERIES_TO_CITY.keys())
-RAIN_MAX_ENTRY_DAY = 10  # Don't enter monthly rain contracts after day 10 of the month
+# Was 10 — restricted rain entries to days 1-10 of each month while we collected
+# signals-only data. May 2026 retrospective analysis (project_jun01_rain_uncapped.md)
+# showed the would-have-been-placed bets at 69% WR / +$502 / +38% ROI over days 11-31.
+# Mechanism: market is slow to reprice contracts as month-to-date actuals accumulate,
+# so the bot's "actual + ensemble remaining" probability sees gaps the market doesn't.
+# Set to 99 (effectively no cutoff) to trade rain throughout the month. Combined
+# with MAX_RAIN_BET_SIZE_USD = 50, downside is bounded while we collect forward data.
+RAIN_MAX_ENTRY_DAY = 99
 
 # --- Model parameters ---
 FORECAST_HORIZON_DAYS = 7  # Only trade contracts resolving within 7 days
