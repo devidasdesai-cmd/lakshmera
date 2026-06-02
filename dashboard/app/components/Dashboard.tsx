@@ -341,6 +341,11 @@ export default function Dashboard({ settled, active, signals, health }: Props) {
 
   // ── Rolling-window metrics (today / 7d / 30d) — for the hero row ──
   const today = todayUtc()
+  // Hero P&L cards reflect daily *temperature* activity. Rain is monthly and
+  // gets its own dedicated tile below — mixing the two distorts daily reads
+  // because rain dumps a chunk on the last day of each month.
+  const enrichedSettledTemp = enrichedSettled.filter(t => !t.isRain)
+
   // "Last 24h P&L" — settlements for yesterday's target date (today's contracts
   // settle tonight at each city's local midnight, so "today's settlements"
   // would be empty until late evening). Yesterday is what just resolved.
@@ -349,13 +354,33 @@ export default function Dashboard({ settled, active, signals, health }: Props) {
     d.setUTCDate(d.getUTCDate() - 1)
     return d.toISOString().slice(0, 10)
   })()
-  const recentPnl   = enrichedSettled
+  const recentPnl   = enrichedSettledTemp
     .filter(t => t.targetDateStr === yesterday)
     .reduce((s, t) => s + parseFloat(t.pnl ?? '0'), 0)
-  const recentCount = enrichedSettled.filter(t => t.targetDateStr === yesterday).length
-  const recentWins  = enrichedSettled.filter(t => t.targetDateStr === yesterday && parseFloat(t.pnl ?? '0') > 0).length
-  const series14 = rollingPnlByDay(enrichedSettled, 14, today)
-  const series30 = rollingPnlByDay(enrichedSettled, 30, today)
+  const recentCount = enrichedSettledTemp.filter(t => t.targetDateStr === yesterday).length
+  const recentWins  = enrichedSettledTemp.filter(t => t.targetDateStr === yesterday && parseFloat(t.pnl ?? '0') > 0).length
+  const series14 = rollingPnlByDay(enrichedSettledTemp, 14, today)
+  const series30 = rollingPnlByDay(enrichedSettledTemp, 30, today)
+
+  // Rain · last month aggregate — find the most recent month that has any
+  // settled rain trades, and aggregate. Rain contracts have targetDateStr =
+  // last day of the month, so grouping by YYYY-MM gives us monthly buckets.
+  const rainSettled = enrichedSettled.filter(t => t.isRain)
+  const rainByMonth = new Map<string, typeof enrichedSettled>()
+  for (const t of rainSettled) {
+    const monthKey = t.targetDateStr.slice(0, 7)
+    if (!monthKey) continue
+    if (!rainByMonth.has(monthKey)) rainByMonth.set(monthKey, [])
+    rainByMonth.get(monthKey)!.push(t)
+  }
+  const latestRainMonth = Array.from(rainByMonth.keys()).sort().pop() ?? null
+  const latestRainTrades = latestRainMonth ? rainByMonth.get(latestRainMonth)! : []
+  const rainPnl   = latestRainTrades.reduce((s, t) => s + parseFloat(t.pnl ?? '0'), 0)
+  const rainCount = latestRainTrades.length
+  const rainWins  = latestRainTrades.filter(t => parseFloat(t.pnl ?? '0') > 0).length
+  const rainMonthLabel = latestRainMonth
+    ? new Date(latestRainMonth + '-15T00:00:00Z').toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' })
+    : null
   const last7Pnl  = series14[13] - (series14[6] ?? 0)
   const last30Pnl = series30[29]
   const TARGET_MONTHLY = 2000
@@ -459,19 +484,21 @@ export default function Dashboard({ settled, active, signals, health }: Props) {
         </span>
       </div>
 
-      {/* Hero metrics: today / 7d / 30d / open positions risk + sparklines */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      {/* Hero metrics: temp-only 24h/7d/30d, rain monthly, open risk. Temperature
+          cards exclude rain because rain settles monthly in one chunk and would
+          distort the daily reading; rain gets a dedicated tile. */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
         <HeroCard
           label="Last 24h P&L"
           value={dollars(recentPnl)}
-          subtitle={recentCount > 0 ? `${recentWins}W · ${recentCount - recentWins}L · settled ${yesterday.slice(5)}` : 'no settlements yet'}
+          subtitle={recentCount > 0 ? `${recentWins}W · ${recentCount - recentWins}L · settled ${yesterday.slice(5)}` : 'no temp settlements yet'}
           tone={recentPnl >= 0 ? 'positive' : 'negative'}
           spark={series14}
         />
         <HeroCard
           label="7-day P&L"
           value={dollars(last7Pnl)}
-          subtitle="rolling week"
+          subtitle="rolling week (temp)"
           tone={last7Pnl >= 0 ? 'positive' : 'negative'}
           spark={series14}
         />
@@ -482,6 +509,12 @@ export default function Dashboard({ settled, active, signals, health }: Props) {
           tone={last30Pnl >= 0 ? 'positive' : 'negative'}
           spark={series30}
           progress={Math.max(0, Math.min(1, last30Pnl / TARGET_MONTHLY))}
+        />
+        <HeroCard
+          label={rainMonthLabel ? `Rain · ${rainMonthLabel}` : 'Rain · no data'}
+          value={rainCount > 0 ? dollars(rainPnl) : '—'}
+          subtitle={rainCount > 0 ? `${rainWins}W · ${rainCount - rainWins}L · monthly` : 'no settled rain bets yet'}
+          tone={rainCount === 0 ? 'neutral' : rainPnl >= 0 ? 'positive' : 'negative'}
         />
         <HeroCard
           label="Capital at risk now"
