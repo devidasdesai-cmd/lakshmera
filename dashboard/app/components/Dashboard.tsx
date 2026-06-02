@@ -341,11 +341,19 @@ export default function Dashboard({ settled, active, signals, health }: Props) {
 
   // ── Rolling-window metrics (today / 7d / 30d) — for the hero row ──
   const today = todayUtc()
-  const todayPnl   = enrichedSettled
-    .filter(t => t.targetDateStr === today)
+  // "Last 24h P&L" — settlements for yesterday's target date (today's contracts
+  // settle tonight at each city's local midnight, so "today's settlements"
+  // would be empty until late evening). Yesterday is what just resolved.
+  const yesterday = (() => {
+    const d = new Date()
+    d.setUTCDate(d.getUTCDate() - 1)
+    return d.toISOString().slice(0, 10)
+  })()
+  const recentPnl   = enrichedSettled
+    .filter(t => t.targetDateStr === yesterday)
     .reduce((s, t) => s + parseFloat(t.pnl ?? '0'), 0)
-  const todayCount = enrichedSettled.filter(t => t.targetDateStr === today).length
-  const todayWins  = enrichedSettled.filter(t => t.targetDateStr === today && parseFloat(t.pnl ?? '0') > 0).length
+  const recentCount = enrichedSettled.filter(t => t.targetDateStr === yesterday).length
+  const recentWins  = enrichedSettled.filter(t => t.targetDateStr === yesterday && parseFloat(t.pnl ?? '0') > 0).length
   const series14 = rollingPnlByDay(enrichedSettled, 14, today)
   const series30 = rollingPnlByDay(enrichedSettled, 30, today)
   const last7Pnl  = series14[13] - (series14[6] ?? 0)
@@ -454,10 +462,10 @@ export default function Dashboard({ settled, active, signals, health }: Props) {
       {/* Hero metrics: today / 7d / 30d / open positions risk + sparklines */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <HeroCard
-          label="Today's P&L"
-          value={dollars(todayPnl)}
-          subtitle={todayCount > 0 ? `${todayWins}W · ${todayCount - todayWins}L` : 'no settlements yet'}
-          tone={todayPnl >= 0 ? 'positive' : 'negative'}
+          label="Last 24h P&L"
+          value={dollars(recentPnl)}
+          subtitle={recentCount > 0 ? `${recentWins}W · ${recentCount - recentWins}L · settled ${yesterday.slice(5)}` : 'no settlements yet'}
+          tone={recentPnl >= 0 ? 'positive' : 'negative'}
           spark={series14}
         />
         <HeroCard
