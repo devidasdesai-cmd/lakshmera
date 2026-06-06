@@ -30,11 +30,16 @@ MAX_YES_BET_MARKET_PRICE = 0.0   # YES bets fully disabled on 2026-05-28.
 BAN_TAIL_NO_BETS = True
 
 # Carve-out from MAX_NO_BET_YES_PRICE for bucket NO bets when the market mildly leans YES
-# (50-65¢). NO_BET signal analysis over May 14-23 found 10 settled bucket NO blocks in this
-# band with 80% WR (+$589 hypothetical P&L). Wins concentrated in desert/coastal cities
-# (Las Vegas 4-0, Phoenix 2-2, LA/Houston 1-0 each). Shipping with default $100 stake to
-# gather forward data; raise stake only if pattern validates over next 2 weeks.
-ALLOW_BUCKET_NO_IN_LEAN_YES_ZONE = True
+# (50-65¢). DISABLED 2026-06-05 because the carve-out broke under V2: the May 22 analysis
+# showed 80% WR / +$589 hypothetical, but V2's first 4 days showed 2/11 wins (18% WR) /
+# -$382 in this band. Diagnosis: V2's narrow σ=1.5°F made the bot always strongly disagree
+# with the market in this band, but the market was right more often than V2. Under V2,
+# the carve-out fires on every contract in the band; under V1 it fired more selectively
+# (because V1's noisy probabilities sometimes accidentally agreed with market). Revisit
+# this if σ widening (V2_FORECAST_SIGMA_F=2.5°F, also shipped 2026-06-05) fixes V2's
+# overconfidence — at σ=2.5°F, V2 would no longer always strongly disagree, and the
+# original 80% WR pattern may return.
+ALLOW_BUCKET_NO_IN_LEAN_YES_ZONE = False
 LEAN_YES_ZONE_MIN = 0.50
 LEAN_YES_ZONE_MAX = 0.65
 
@@ -76,10 +81,15 @@ MAX_RAIN_BET_SIZE_USD = 50
 STRATEGY_VERSION = "v2"
 
 # Forecast error std dev (°F) for V2's distribution-fit probability.
-# Fit empirically on 457 settled bucket trades — sweep over σ ∈ [1, 8] showed
-# σ=1.5 minimizes Brier. Per-city optimal σ ranges 1.0-2.5°F; global 1.5 captures
-# most of the value. Revisit after first 200 V2 settled trades.
-V2_FORECAST_SIGMA_F = 1.5
+# Original σ=1.5°F was fit on historical-forecast archive data, which is cleaner than
+# production forecasts. Production June 1-4 V2 trades showed empirical forecast error
+# closer to ~2.4°F (MAE 1.9°F × 1.25 ≈ 2.4°F empirical σ), and the symptoms matched a
+# too-narrow-σ pattern: 5 trades where V2 said ≤6% YES probability all resolved YES.
+# Raised to 2.5°F on 2026-06-05 to match production forecast error. May reduce trade
+# volume because narrower edges → fewer signals exceed MIN_EDGE_THRESHOLD, but the
+# remaining bets should be better-calibrated. Revisit after ~50 settled trades at
+# the new σ.
+V2_FORECAST_SIGMA_F = 2.5
 
 # --- Probability calibration ---
 # Raw GFS-derived probabilities are systematically miscalibrated. From 338 settled trades:

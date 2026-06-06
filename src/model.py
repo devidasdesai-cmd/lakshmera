@@ -53,7 +53,10 @@ def compute_stake_cap(side: str, direction: str, price_paid: float) -> int:
 
     Profitable categories get scaled up; everything else stays at the base $100.
 
-      $300: NO bets at 80-95¢ (90.8% WR historically — highest scale opportunity)
+      $200: NO bets at 80-95¢ (was $300; reduced 2026-06-05 — V2 first-4-day analysis
+            showed 79% WR vs 86% breakeven, with each loss avg -$171. Big stakes were
+            amplifying the σ-too-narrow problem; reducing to $200 caps single-bet
+            downside while still leveraging the historical winning category.)
       $200: Bucket NO at 60-80¢ (73.8% WR, profitable)
       $200: Tail YES at 5-20¢ (asymmetric payoff with reasonable frequency)
       $150: Cheap longshot Tail YES at 0-5¢ (asymmetric, low frequency)
@@ -65,7 +68,7 @@ def compute_stake_cap(side: str, direction: str, price_paid: float) -> int:
     if side == 'no':
         # NO bets paid at 80-95¢ — high win rate across both Bucket and Tail
         if 0.80 <= price_paid < 0.95:
-            return 300
+            return 200
         # Bucket NO at standard mid-range — historically profitable
         if is_bucket and 0.60 <= price_paid < 0.80:
             return 200
