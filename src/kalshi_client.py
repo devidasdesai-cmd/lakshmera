@@ -11,6 +11,16 @@ from config import KALSHI_API_KEY, KALSHI_API_KEY_ID, KALSHI_BASE_URL
 # The path prefix that Kalshi includes in the signature message
 KALSHI_API_PATH_PREFIX = "/trade-api/v2"
 
+# Status codes worth retrying. 403 included because Kalshi has been observed
+# returning transient 403s during platform issues (e.g., 2026-06-06 outage).
+# 401/404/400 are excluded — those indicate caller-side issues that won't
+# resolve by retrying.
+_RETRY_STATUS_CODES = frozenset({403, 408, 429, 500, 502, 503, 504})
+
+# Backoff schedule for GET retries: 3 total attempts (1 initial + 2 retries).
+# Total worst-case extra wait per call: ~20s.
+_GET_RETRY_BACKOFFS_S = (5, 15)
+
 
 def _load_private_key(raw: str):
     """
@@ -70,16 +80,42 @@ class KalshiClient:
         self.session = requests.Session()
 
     def _get(self, path: str, params: dict = None) -> dict:
-        resp = self.session.get(
-            self.base + path,
-            headers=_auth_headers("GET", path),
-            params=params,
-            timeout=15,
-        )
-        if not resp.ok:
-            print(f"Kalshi API error {resp.status_code} on GET {path}: {resp.text}")
-        resp.raise_for_status()
-        return resp.json()
+        """
+        GET with up to 3 attempts and exponential backoff for transient errors.
+        Retries on _RETRY_STATUS_CODES (403/408/429/5xx) and connection/timeout
+        errors. Raises on non-retryable codes (400/401/404/etc.) or after all
+        attempts fail. GET is idempotent so retries are safe.
+        """
+        for attempt in range(1 + len(_GET_RETRY_BACKOFFS_S)):
+            try:
+                resp = self.session.get(
+                    self.base + path,
+                    headers=_auth_headers("GET", path),
+                    params=params,
+                    timeout=15,
+                )
+                if resp.ok:
+                    return resp.json()
+                # Decide whether to retry this status code
+                if resp.status_code in _RETRY_STATUS_CODES and attempt < len(_GET_RETRY_BACKOFFS_S):
+                    wait = _GET_RETRY_BACKOFFS_S[attempt]
+                    print(f"  Kalshi GET {path} returned {resp.status_code}; retrying in {wait}s "
+                          f"(attempt {attempt+1}/{1 + len(_GET_RETRY_BACKOFFS_S)})")
+                    time.sleep(wait)
+                    continue
+                # Non-retryable status code, or final attempt failed
+                print(f"Kalshi API error {resp.status_code} on GET {path}: {resp.text[:200]}")
+                resp.raise_for_status()
+            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+                if attempt < len(_GET_RETRY_BACKOFFS_S):
+                    wait = _GET_RETRY_BACKOFFS_S[attempt]
+                    print(f"  Kalshi GET {path} hit {type(e).__name__}; retrying in {wait}s "
+                          f"(attempt {attempt+1}/{1 + len(_GET_RETRY_BACKOFFS_S)})")
+                    time.sleep(wait)
+                    continue
+                raise
+        # Should never reach here, but be explicit
+        raise RuntimeError(f"Kalshi GET {path} exhausted all retries")
 
     def _post(self, path: str, payload: dict) -> dict:
         resp = self.session.post(
@@ -114,6 +150,12 @@ class KalshiClient:
 
     def get_events(self, series_ticker: str = None, limit: int = 200,
                    cursor: str = None, status: str = "open") -> dict:
+        """
+        Fetch events for a series. After the _get retry budget is exhausted,
+        return an empty events list instead of raising — this lets the calling
+        cron cycle skip the failed series and continue evaluating other cities.
+        Individual series failure no longer kills the whole bot run.
+        """
         params = {"limit": limit, "with_nested_markets": "true"}
         if status:
             params["status"] = status
@@ -121,7 +163,13 @@ class KalshiClient:
             params["series_ticker"] = series_ticker
         if cursor:
             params["cursor"] = cursor
-        return self._get("/events", params=params)
+        try:
+            return self._get("/events", params=params)
+        except Exception as e:
+            print(f"  ⚠ Kalshi get_events FAILED for series={series_ticker} after retries: "
+                  f"{type(e).__name__}: {e}")
+            print(f"  → Skipping this series; the rest of the run continues.")
+            return {"events": []}
 
     def get_all_events(self, series_ticker: str = None, status: str = "open") -> list[dict]:
         """Paginated version — fetches all events across all cursor pages."""
