@@ -71,6 +71,10 @@ interface EnrichedTrade extends Trade {
   targetDateStr: string
   isRain:        boolean
   edge:          number | null  // post-fee edge on the side bet at trade time
+  threshold:     number | null
+  bucketLow:     number | null
+  bucketHigh:    number | null
+  rangeDisplay:  string
 }
 
 // Kalshi fee is 7% on net profit of a winning contract.
@@ -98,8 +102,12 @@ interface EnrichedSignal extends Signal {
 // ─── Enrichment ──────────────────────────────────────────────────────────────
 
 function enrichTrade(t: Trade): EnrichedTrade {
-  const { city, dateDisplay, typeCode, targetDateStr, isRain } = parseTicker(t.ticker)
-  return { ...t, city, dateDisplay, typeCode, targetDateStr, isRain, edge: computeTradeEdge(t) }
+  const p = parseTicker(t.ticker)
+  return { ...t, city: p.city, dateDisplay: p.dateDisplay, typeCode: p.typeCode,
+           targetDateStr: p.targetDateStr, isRain: p.isRain,
+           threshold: p.threshold, bucketLow: p.bucketLow, bucketHigh: p.bucketHigh,
+           rangeDisplay: p.rangeDisplay,
+           edge: computeTradeEdge(t) }
 }
 
 function enrichSignal(s: Signal): EnrichedSignal {
@@ -727,12 +735,14 @@ export default function Dashboard({ settled, active, signals, health }: Props) {
                   <ColHeader label="Date"     tip="Date the high temperature is measured and the contract resolves"                             sortKey="targetDateStr" sort={settledSort} onSort={k => setSettledSort(toggleSort(settledSort, k))} />
                   <ColHeader label="Strat"    tip="Which strategy version placed the bet. v1 = current edge-based logic."                       sortKey="strategy_version" sort={settledSort} onSort={k => setSettledSort(toggleSort(settledSort, k))} />
                   <ColHeader label="Contract" tip="T = tail bet (above or below a threshold). B = bucket bet (temperature falls in a range)"   sortKey="typeCode"      sort={settledSort} onSort={k => setSettledSort(toggleSort(settledSort, k))} />
+                  <ColHeader label="Range"    tip="Temperature range the contract bets on. Bucket: midpoint ±1°F. Tail: threshold value."        sortKey="threshold"     sort={settledSort} onSort={k => setSettledSort(toggleSort(settledSort, k))} />
                   <ColHeader label="Side"     tip="YES = we bet the condition is met. NO = we bet it is not"                                    sortKey="side"          sort={settledSort} onSort={k => setSettledSort(toggleSort(settledSort, k))} />
                   <ColHeader label="Amount"   tip="Dollars staked on this trade (paper money in PAPER_TRADING mode)"                            sortKey="amount_usd"    sort={settledSort} onSort={k => setSettledSort(toggleSort(settledSort, k))} />
                   <ColHeader label="Price"    tip="Price paid per contract (0–1 scale). 0.30 means 30 cents. Payout is $1 per contract if won"  sortKey="price_paid"    sort={settledSort} onSort={k => setSettledSort(toggleSort(settledSort, k))} />
                   <ColHeader label="Our %"    tip="Our model's probability of YES at the moment of trade (GFS ensemble × calibration)"           sortKey="our_probability"    sort={settledSort} onSort={k => setSettledSort(toggleSort(settledSort, k))} />
                   <ColHeader label="Mkt %"    tip="Market's implied probability of YES at the moment of trade (the YES ask price)"               sortKey="market_probability" sort={settledSort} onSort={k => setSettledSort(toggleSort(settledSort, k))} />
                   <ColHeader label="Edge"     tip="Post-fee edge on the side we bet. YES: our %–mkt %–fee. NO: mkt %–our %–fee. Higher = stronger disagreement with market." sortKey="edge" sort={settledSort} onSort={k => setSettledSort(toggleSort(settledSort, k))} />
+                  <ColHeader label="GFS"      tip="Which GFS forecast cycle (00z/06z/12z/18z) drove this bet. Reflects which cron run placed it." sortKey="gfs_run"       sort={settledSort} onSort={k => setSettledSort(toggleSort(settledSort, k))} />
                   <ColHeader label="Result"   tip="Whether the market resolved in our favor"                                                    sortKey="result"        sort={settledSort} onSort={k => setSettledSort(toggleSort(settledSort, k))} />
                   <ColHeader label="P&L"      tip="Dollar profit (green) or loss (red) on this paper trade"                                    sortKey="pnl"           sort={settledSort} onSort={k => setSettledSort(toggleSort(settledSort, k))} />
                 </tr>
@@ -762,6 +772,7 @@ export default function Dashboard({ settled, active, signals, health }: Props) {
                         ) : '—'}
                       </td>
                       <td className="px-4 py-2.5 text-gray-700 dark:text-gray-300 font-mono text-xs tabular-nums">{t.typeCode}</td>
+                      <td className="px-4 py-2.5 text-gray-600 dark:text-gray-400 font-mono text-xs tabular-nums">{t.rangeDisplay || '—'}</td>
                       <td className="px-4 py-2.5">
                         <span className={`font-medium ${t.side === 'yes' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
                           {t.side.toUpperCase()}
@@ -780,6 +791,7 @@ export default function Dashboard({ settled, active, signals, health }: Props) {
                           </span>
                         ) : '—'}
                       </td>
+                      <td className="px-4 py-2.5 text-gray-500 dark:text-gray-400 font-mono text-xs tabular-nums">{t.gfs_run || '—'}</td>
                       <td className="px-4 py-2.5">
                         {t.result ? (
                           <span className={`font-medium ${won ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
@@ -813,11 +825,13 @@ export default function Dashboard({ settled, active, signals, health }: Props) {
                   <ColHeader label="City"     tip="US city where the weather contract is settled"                                               sortKey="city"             sort={activeSort} onSort={k => setActiveSort(toggleSort(activeSort, k))} />
                   <ColHeader label="Date"     tip="Date this contract resolves"                                                                 sortKey="targetDateStr"    sort={activeSort} onSort={k => setActiveSort(toggleSort(activeSort, k))} />
                   <ColHeader label="Contract" tip="T = tail bet (above or below a threshold). B = bucket bet (temperature falls in a range)"   sortKey="typeCode"         sort={activeSort} onSort={k => setActiveSort(toggleSort(activeSort, k))} />
+                  <ColHeader label="Range"    tip="Temperature range the contract bets on. Bucket: midpoint ±1°F. Tail: threshold value."        sortKey="threshold"        sort={activeSort} onSort={k => setActiveSort(toggleSort(activeSort, k))} />
                   <ColHeader label="Side"     tip="YES = we bet the condition is met. NO = we bet it is not"                                    sortKey="side"             sort={activeSort} onSort={k => setActiveSort(toggleSort(activeSort, k))} />
                   <ColHeader label="Amount"   tip="Dollars staked on this open position (paper money in PAPER_TRADING mode)"                    sortKey="amount_usd"       sort={activeSort} onSort={k => setActiveSort(toggleSort(activeSort, k))} />
                   <ColHeader label="Price"    tip="Price paid per contract (0–1 scale). 0.30 means 30 cents. Payout is $1 per contract if won"  sortKey="price_paid"       sort={activeSort} onSort={k => setActiveSort(toggleSort(activeSort, k))} />
                   <ColHeader label="Our %"    tip="Our model's probability estimate using GFS ensemble weather forecasts (31 model runs)"       sortKey="our_probability"  sort={activeSort} onSort={k => setActiveSort(toggleSort(activeSort, k))} />
                   <ColHeader label="Mkt %"    tip="The market's implied probability — the price other traders are paying for YES contracts"     sortKey="market_probability" sort={activeSort} onSort={k => setActiveSort(toggleSort(activeSort, k))} />
+                  <ColHeader label="Edge"     tip="Post-fee edge on the side we bet. YES: our %–mkt %–fee. NO: mkt %–our %–fee. Higher = stronger disagreement with market." sortKey="edge" sort={activeSort} onSort={k => setActiveSort(toggleSort(activeSort, k))} />
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 dark:divide-gray-800/60">
@@ -831,6 +845,7 @@ export default function Dashboard({ settled, active, signals, health }: Props) {
                     </td>
                     <td className="px-4 py-2.5 text-gray-500 tabular-nums text-xs">{t.dateDisplay}</td>
                     <td className="px-4 py-2.5 text-gray-700 dark:text-gray-300 font-mono text-xs tabular-nums">{t.typeCode}</td>
+                    <td className="px-4 py-2.5 text-gray-600 dark:text-gray-400 font-mono text-xs tabular-nums">{t.rangeDisplay || '—'}</td>
                     <td className="px-4 py-2.5">
                       <span className={`font-medium ${t.side === 'yes' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
                         {t.side.toUpperCase()}
@@ -842,6 +857,13 @@ export default function Dashboard({ settled, active, signals, health }: Props) {
                     </td>
                     <td className="px-4 py-2.5 text-gray-700 dark:text-gray-300 tabular-nums font-mono text-xs">{pct(t.our_probability)}</td>
                     <td className="px-4 py-2.5 text-gray-700 dark:text-gray-300 tabular-nums font-mono text-xs">{pct(t.market_probability)}</td>
+                    <td className="px-4 py-2.5">
+                      {t.edge !== null ? (
+                        <span className={`tabular-nums font-mono text-xs font-medium ${t.edge >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                          {t.edge >= 0 ? '+' : ''}{(t.edge * 100).toFixed(1)}%
+                        </span>
+                      ) : '—'}
+                    </td>
                   </tr>
                 ))}
               </tbody>

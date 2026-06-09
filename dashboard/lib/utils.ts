@@ -118,6 +118,13 @@ export interface ParsedTicker {
   targetDate: Date | null
   targetDateStr: string  // YYYY-MM-DD for filter comparison
   isRain: boolean
+  // Threshold / bucket — populated for temperature contracts. For buckets,
+  // the range is midpoint ± 1°F. For tails (T-prefix), only `threshold` is set.
+  // For rain, only `threshold` (inches) is set.
+  threshold: number | null
+  bucketLow: number | null
+  bucketHigh: number | null
+  rangeDisplay: string   // "91.5-93.5°F" for bucket, "T75°F" for tail, "> 2\"" for rain
 }
 
 const RAIN_SERIES = new Set(Object.keys(SERIES_TO_CITY).filter(k => k.startsWith('KXRAIN')))
@@ -138,6 +145,10 @@ export function parseTicker(ticker: string): ParsedTicker {
   let targetDate: Date | null = null
   let targetDateStr = ''
   let typeCode      = thirdPart
+  let threshold: number | null = null
+  let bucketLow:  number | null = null
+  let bucketHigh: number | null = null
+  let rangeDisplay = ''
 
   if (isRain) {
     // Rain format: YYMON (e.g. 26MAY) — monthly contract
@@ -152,8 +163,15 @@ export function parseTicker(ticker: string): ParsedTicker {
       const dy      = String(lastDay).padStart(2, '0')
       targetDateStr = `${year}-${mo}-${dy}`
     }
-    // Show threshold as >X" instead of bare number
-    if (thirdPart) typeCode = `>${thirdPart}"`
+    // Rain contracts: third part is the inches threshold (e.g., "2" for >2")
+    if (thirdPart) {
+      typeCode = `>${thirdPart}"`
+      const t = parseFloat(thirdPart)
+      if (!isNaN(t)) {
+        threshold = t
+        rangeDisplay = `> ${t}"`
+      }
+    }
   } else {
     // Temperature format: YYMONDD (e.g. 26MAY09)
     const m = dateStr.match(/^(\d{2})([A-Z]{3})(\d{2})$/)
@@ -165,9 +183,28 @@ export function parseTicker(ticker: string): ParsedTicker {
       const dy      = String(targetDate.getDate()).padStart(2, '0')
       targetDateStr = `${yr}-${mo}-${dy}`
     }
+    // Parse temperature threshold/bucket. Tail: T75 → threshold=75. Bucket:
+    // B92.5 → midpoint=92.5, range=91.5-93.5. Direction (above/below for tail)
+    // can't be recovered from ticker alone, so we just show the threshold.
+    if (thirdPart.startsWith('B')) {
+      const mid = parseFloat(thirdPart.slice(1))
+      if (!isNaN(mid)) {
+        threshold = mid
+        bucketLow = mid - 1.0
+        bucketHigh = mid + 1.0
+        rangeDisplay = `${bucketLow.toFixed(1)}-${bucketHigh.toFixed(1)}°F`
+      }
+    } else if (thirdPart.startsWith('T')) {
+      const t = parseFloat(thirdPart.slice(1))
+      if (!isNaN(t)) {
+        threshold = t
+        rangeDisplay = `${t}°F (tail)`
+      }
+    }
   }
 
-  return { city, dateDisplay, typeCode, targetDate, targetDateStr, isRain }
+  return { city, dateDisplay, typeCode, targetDate, targetDateStr, isRain,
+           threshold, bucketLow, bucketHigh, rangeDisplay }
 }
 
 export function pct(val: string | number | null): string {
