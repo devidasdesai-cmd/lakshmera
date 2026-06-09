@@ -743,6 +743,8 @@ export default function Dashboard({ settled, active, signals, health }: Props) {
                   <ColHeader label="Mkt %"    tip="Market's implied probability of YES at the moment of trade (the YES ask price)"               sortKey="market_probability" sort={settledSort} onSort={k => setSettledSort(toggleSort(settledSort, k))} />
                   <ColHeader label="Edge"     tip="Post-fee edge on the side we bet. YES: our %–mkt %–fee. NO: mkt %–our %–fee. Higher = stronger disagreement with market." sortKey="edge" sort={settledSort} onSort={k => setSettledSort(toggleSort(settledSort, k))} />
                   <ColHeader label="GFS"      tip="Which GFS forecast cycle (00z/06z/12z/18z) drove this bet. Reflects which cron run placed it." sortKey="gfs_run"       sort={settledSort} onSort={k => setSettledSort(toggleSort(settledSort, k))} />
+                  <ColHeader label="Actual"   tip="Observed high temperature on the contract date (from Open-Meteo archive at the city coords)" sortKey="actual_high_f" sort={settledSort} onSort={k => setSettledSort(toggleSort(settledSort, k))} />
+                  <ColHeader label="Δ edge"   tip="Distance from the nearest bucket edge in °F. Positive (green) = won, comfortably outside. Tiny positive = close call. Negative (red) = lost, actual was inside the bucket." sortKey="distanceFromEdge" sort={settledSort} onSort={k => setSettledSort(toggleSort(settledSort, k))} />
                   <ColHeader label="Result"   tip="Whether the market resolved in our favor"                                                    sortKey="result"        sort={settledSort} onSort={k => setSettledSort(toggleSort(settledSort, k))} />
                   <ColHeader label="P&L"      tip="Dollar profit (green) or loss (red) on this paper trade"                                    sortKey="pnl"           sort={settledSort} onSort={k => setSettledSort(toggleSort(settledSort, k))} />
                 </tr>
@@ -792,6 +794,28 @@ export default function Dashboard({ settled, active, signals, health }: Props) {
                         ) : '—'}
                       </td>
                       <td className="px-4 py-2.5 text-gray-500 dark:text-gray-400 font-mono text-xs tabular-nums">{t.gfs_run || '—'}</td>
+                      <td className="px-4 py-2.5 text-gray-700 dark:text-gray-300 font-mono text-xs tabular-nums">
+                        {t.actual_high_f ? `${parseFloat(t.actual_high_f).toFixed(1)}°F` : '—'}
+                      </td>
+                      <td className="px-4 py-2.5 font-mono text-xs tabular-nums">
+                        {(() => {
+                          // Distance from nearest bucket edge. Positive = won, outside the bucket.
+                          // Negative = lost, actual was inside the bucket.
+                          const actual = t.actual_high_f ? parseFloat(t.actual_high_f) : null
+                          if (actual === null || t.bucketLow === null || t.bucketHigh === null) return <span className="text-gray-300 dark:text-gray-700">—</span>
+                          let signed: number
+                          if (actual < t.bucketLow)        signed =  t.bucketLow  - actual   // below, outside (NO win)
+                          else if (actual > t.bucketHigh)  signed =  actual - t.bucketHigh   // above, outside (NO win)
+                          else                              signed = -Math.min(actual - t.bucketLow, t.bucketHigh - actual)  // inside (NO loss)
+                          // Flip sign for YES bets — they win when inside, lose when outside.
+                          const fromBetView = t.side === 'yes' ? -signed : signed
+                          return (
+                            <span className={`font-medium ${fromBetView >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                              {fromBetView >= 0 ? '+' : ''}{fromBetView.toFixed(1)}°F
+                            </span>
+                          )
+                        })()}
+                      </td>
                       <td className="px-4 py-2.5">
                         {t.result ? (
                           <span className={`font-medium ${won ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>

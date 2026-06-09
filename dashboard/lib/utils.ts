@@ -14,6 +14,7 @@ export interface Trade {
   created_at: string
   gfs_run: string | null
   strategy_version: string | null
+  actual_high_f: string | null   // observed high temp °F, populated by settler.py
 }
 
 export interface Signal {
