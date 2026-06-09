@@ -23,6 +23,7 @@ export interface Signal {
   market_probability: string
   edge: string
   action: string
+  reason: string | null
   created_at: string
 }
 

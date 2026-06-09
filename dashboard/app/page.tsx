@@ -24,11 +24,12 @@ export default async function Page() {
       LIMIT 200
     `),
     sql<Signal>(`
-      SELECT city, ticker, our_probability, market_probability, edge, action,
+      SELECT city, ticker, our_probability, market_probability, edge, action, reason,
              created_at::text AS created_at
       FROM signals
+      WHERE created_at >= NOW() - INTERVAL '3 days'
       ORDER BY created_at DESC
-      LIMIT 200
+      LIMIT 1000
     `),
     sql<{ last_signal_at: string | null; signals_today: string; runs_today: string }>(`
       SELECT

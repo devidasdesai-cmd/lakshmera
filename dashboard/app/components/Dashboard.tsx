@@ -281,6 +281,7 @@ export default function Dashboard({ settled, active, signals, health }: Props) {
   const [settledSort, setSettledSort] = useState<SortState>({ col: 'targetDateStr', dir: 'desc' })
   const [activeSort,  setActiveSort]  = useState<SortState>({ col: 'targetDateStr', dir: 'asc'  })
   const [signalSort,  setSignalSort]  = useState<SortState>({ col: 'targetDateStr', dir: 'desc' })
+  const [signalMode,  setSignalMode]  = useState<'actionable' | 'all'>('actionable')
 
   // Enrich once
   const enrichedSettled = useMemo(() => settled.map(enrichTrade),  [settled])
@@ -308,7 +309,17 @@ export default function Dashboard({ settled, active, signals, health }: Props) {
 
   const filteredSettled = useMemo(() => applyFilters(enrichedSettled), [enrichedSettled, fromDate, toDate, city])
   const filteredActive  = useMemo(() => applyFilters(enrichedActive),  [enrichedActive,  fromDate, toDate, city])
-  const filteredSignals = useMemo(() => applyFilters(enrichedSignals), [enrichedSignals, fromDate, toDate, city])
+  // Signals get an extra "actionable" filter: actionable = anything except the
+  // boring NO_BET/edge_too_low case. Default 'actionable' to keep the log
+  // scannable; toggle 'all' to see every market evaluation including the
+  // ~90% of NO_BETs that are just "no edge here, moving on."
+  const filteredSignalsBeforeMode = useMemo(() => applyFilters(enrichedSignals), [enrichedSignals, fromDate, toDate, city])
+  const filteredSignals = useMemo(() => {
+    if (signalMode === 'all') return filteredSignalsBeforeMode
+    return filteredSignalsBeforeMode.filter(s =>
+      s.action !== 'NO_BET' || (s.reason !== null && s.reason !== 'edge_too_low')
+    )
+  }, [filteredSignalsBeforeMode, signalMode])
 
   const sortedSettled = useMemo(() => applySort(filteredSettled, settledSort), [filteredSettled, settledSort])
   const sortedActive  = useMemo(() => applySort(filteredActive,  activeSort),  [filteredActive,  activeSort])
@@ -841,8 +852,30 @@ export default function Dashboard({ settled, active, signals, health }: Props) {
 
       {/* Signal Log */}
       <Section title="Signal Log" shown={sortedSignals.length} total={enrichedSignals.length} className="bg-violet-50 dark:bg-violet-900/30 border border-violet-200 dark:border-violet-700">
+        {/* Toggle: actionable signals vs all evaluations (3-day window) */}
+        <div className="flex items-center gap-2 px-4 py-2 border-b border-gray-200 dark:border-gray-800 text-xs">
+          <span className="text-gray-500 dark:text-gray-400 uppercase tracking-wider mr-1">Show</span>
+          {([
+            { v: 'actionable', label: 'Actionable only', desc: 'BET_YES/NO, SUSPICIOUS_EDGE, and NO_BET with a specific reason' },
+            { v: 'all',        label: 'All evaluations', desc: 'Every market the bot looked at — including the boring NO_BET edge_too_low cases' },
+          ] as const).map(opt => (
+            <button
+              key={opt.v}
+              onClick={() => setSignalMode(opt.v)}
+              title={opt.desc}
+              className={`px-2.5 py-1 rounded text-xs font-medium transition-colors border ${
+                signalMode === opt.v
+                  ? 'bg-gray-900 dark:bg-white text-white dark:text-gray-900 border-gray-900 dark:border-white'
+                  : 'bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-800 hover:border-gray-400 dark:hover:border-gray-600'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+          <span className="text-gray-400 dark:text-gray-600 ml-auto">last 3 days</span>
+        </div>
         {sortedSignals.length === 0 ? (
-          <Empty>{filtersActive ? 'No signals match the current filters.' : 'No signals logged yet.'}</Empty>
+          <Empty>{filtersActive ? 'No signals match the current filters.' : (signalMode === 'actionable' ? 'No actionable signals in the last 3 days. Try "All evaluations".' : 'No signals logged yet.')}</Empty>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
