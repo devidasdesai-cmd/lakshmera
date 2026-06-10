@@ -185,15 +185,18 @@ export function parseTicker(ticker: string): ParsedTicker {
       targetDateStr = `${yr}-${mo}-${dy}`
     }
     // Parse temperature threshold/bucket. Tail: T75 → threshold=75. Bucket:
-    // B92.5 → midpoint=92.5, range=91.5-93.5. Direction (above/below for tail)
-    // can't be recovered from ticker alone, so we just show the threshold.
+    // B78.5 (midpoint) → Kalshi's actual bucket is 78-79°F (1°F wide, midpoint
+    // ±0.5°F). Verified against Kalshi market response: cap_strike/floor_strike
+    // confirm this convention. (The fallback in src/market_parser.py was
+    // historically wrong at ±1°F, but trader.py reads the correct range from
+    // the market title at evaluation time so it never bit us in bet placement.)
     if (thirdPart.startsWith('B')) {
       const mid = parseFloat(thirdPart.slice(1))
       if (!isNaN(mid)) {
         threshold = mid
-        bucketLow = mid - 1.0
-        bucketHigh = mid + 1.0
-        rangeDisplay = `${bucketLow.toFixed(1)}-${bucketHigh.toFixed(1)}°F`
+        bucketLow = mid - 0.5
+        bucketHigh = mid + 0.5
+        rangeDisplay = `${bucketLow.toFixed(0)}-${bucketHigh.toFixed(0)}°F`
       }
     } else if (thirdPart.startsWith('T')) {
       const t = parseFloat(thirdPart.slice(1))
