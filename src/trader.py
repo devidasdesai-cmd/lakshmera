@@ -20,6 +20,7 @@ from config import (
     REDUCED_STAKE_NO_CAP_USD,
     STRATEGY_VERSION,
     V2_FORECAST_SIGMA_F,
+    V2_FORECAST_SIGMA_BY_CITY,
     ONE_BET_PER_CITY_DATE,
     USE_ECMWF_BLEND,
     USE_CLIMATOLOGY_BASE_RATE,
@@ -54,22 +55,24 @@ def _estimate(temps, direction, threshold_f, low_f, high_f):
     return None
 
 
-def _estimate_v2(temps, direction, threshold_f, low_f, high_f):
+def _estimate_v2(temps, direction, threshold_f, low_f, high_f, city_name=None):
     """
-    V2: distribution-fit probability — normal CDF around the ensemble mean with
-    σ = V2_FORECAST_SIGMA_F. Replaces the V1 "fraction of ensemble members in
-    target window" calculation, which the May 29-30 diagnostics showed is noise.
+    V2: distribution-fit probability — normal CDF around the ensemble mean.
+    σ defaults to V2_FORECAST_SIGMA_F (2.5°F) but is overridden for specific cities
+    via V2_FORECAST_SIGMA_BY_CITY when forecast accuracy is known to be worse
+    (e.g., NYC's Central Park microclimate problem).
     No post-calibration shrinkage; the distribution-fit output is the final our_prob.
     """
     if not temps:
         return None
     mean = sum(temps) / len(temps)
+    sigma = V2_FORECAST_SIGMA_BY_CITY.get(city_name, V2_FORECAST_SIGMA_F)
     if direction == "above":
-        return norm_probability_above(mean, threshold_f, sigma=V2_FORECAST_SIGMA_F)
+        return norm_probability_above(mean, threshold_f, sigma=sigma)
     elif direction == "below":
-        return norm_probability_below(mean, threshold_f, sigma=V2_FORECAST_SIGMA_F)
+        return norm_probability_below(mean, threshold_f, sigma=sigma)
     elif direction == "bucket" and low_f is not None and high_f is not None:
-        return norm_probability_between(mean, low_f, high_f, sigma=V2_FORECAST_SIGMA_F)
+        return norm_probability_between(mean, low_f, high_f, sigma=sigma)
     return None
 
 
@@ -280,12 +283,14 @@ def run_cycle():
             our_prob = calibrate_probability(raw_prob, base_rate=base_rate)
             prob_log = f"raw {raw_prob:.2f} → calibrated {our_prob:.2f}"
         elif STRATEGY_VERSION == "v2":
-            our_prob = _estimate_v2(temps, direction, threshold_f, low_f, high_f)
+            our_prob = _estimate_v2(temps, direction, threshold_f, low_f, high_f,
+                                    city_name=city["name"])
             if our_prob is None:
                 print("  Skipping — probability estimate failed.\n")
                 continue
             mean_f = sum(temps) / len(temps)
-            prob_log = f"dist-fit {our_prob:.2f} (mean={mean_f:.1f}°F, σ={V2_FORECAST_SIGMA_F}°F)"
+            sigma_used = V2_FORECAST_SIGMA_BY_CITY.get(city["name"], V2_FORECAST_SIGMA_F)
+            prob_log = f"dist-fit {our_prob:.2f} (mean={mean_f:.1f}°F, σ={sigma_used}°F)"
             raw_prob = our_prob   # for the log_signal call below; V2 has no separate raw
         else:
             raise ValueError(f"Unknown STRATEGY_VERSION: {STRATEGY_VERSION!r}")

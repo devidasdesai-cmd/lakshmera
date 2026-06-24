@@ -91,6 +91,22 @@ STRATEGY_VERSION = "v2"
 # the new σ.
 V2_FORECAST_SIGMA_F = 2.5
 
+# Per-city σ overrides (added 2026-06-23 after V2 day-23 analysis).
+# Four cities accounted for ~$544 of the $899 post-tuning loss bucket. They share
+# a pattern: structural forecast errors larger than σ=2.5°F can model. NYC has the
+# Central Park microclimate problem (KNYC sits in an urban park; gridded forecasts
+# miss it). Minneapolis, OKC, DC have similar issues at slightly smaller magnitude.
+# Widening σ to 3.5°F for these cities turns "0% YES" predictions into "8-12% YES",
+# which collapses edges and triggers NO_BET in the dangerous bucket-edge cases that
+# caused most of the big losses.
+# Cities not in this dict use V2_FORECAST_SIGMA_F (2.5°F).
+V2_FORECAST_SIGMA_BY_CITY = {
+    "New York":      3.5,
+    "Minneapolis":   3.5,
+    "Oklahoma City": 3.5,
+    "DC":            3.5,
+}
+
 # --- Probability calibration ---
 # Raw GFS-derived probabilities are systematically miscalibrated. From 338 settled trades:
 # when raw_prob = 0-5%, actual YES rate is ~22%. When raw_prob = 70%+, actual is ~25%.
