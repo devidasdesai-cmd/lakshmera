@@ -17,6 +17,7 @@ import requests
 from config import TARGET_CITIES, SERIES_TO_CITY
 from database import get_connection
 from kalshi_client import KalshiClient
+from weather import get_nws_cli_high_f
 
 _CITY_LOOKUP = {c["name"]: c for c in TARGET_CITIES}
 _ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
@@ -24,10 +25,18 @@ _ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 
 def _fetch_actual_high_f(ticker: str, cache: dict) -> float | None:
     """
-    Look up the actual high temp (°F) for a temperature trade from Open-Meteo's
-    archive. Caches per (city, target_date) within a single settler run.
-    Returns None for rain tickers, unparseable tickers, or API failures —
-    settler should not crash if we can't get this number.
+    Look up the actual high temp (°F) for a temperature trade.
+
+    Priority:
+      1. NWS Climatological Daily Report (CLI) — this is the data Kalshi
+         settles on. Reconciles cleanly with WIN/LOSS. Only available for
+         recent dates (typically last ~7-14 days in the NWS product API).
+      2. Open-Meteo archive — fallback for older trades. Can disagree with
+         NWS by several degrees (gridded reanalysis vs single-station obs).
+
+    Caches per (city, target_date) within a single settler run.
+    Returns None for rain tickers, unparseable tickers, or when both
+    sources fail — settler should not crash if we can't get this number.
     """
     if ticker.startswith("KXRAIN"):
         return None
@@ -50,6 +59,13 @@ def _fetch_actual_high_f(ticker: str, cache: dict) -> float | None:
     if key in cache:
         return cache[key]
 
+    # Try NWS CLI first (matches Kalshi's settlement source)
+    v = get_nws_cli_high_f(city_name, target_date)
+    if v is not None:
+        cache[key] = v
+        return v
+
+    # Fall back to Open-Meteo archive
     try:
         r = requests.get(_ARCHIVE_URL, params=dict(
             latitude=city["lat"], longitude=city["lon"],

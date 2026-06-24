@@ -12,6 +12,95 @@ NWS_API_BASE = "https://api.weather.gov"
 NWS_HEADERS = {"User-Agent": "Lakshmera-weather-bot (devidas.desai@gmail.com)"}
 
 
+# NWS Climatological Daily Report — Kalshi's settlement source. Each city maps
+# to the NWS CLI "location" code (the 3-letter station identifier the API uses
+# to filter CLI products). Verified 2026-06-23 against api.weather.gov/products.
+NWS_CLI_LOCATION_BY_CITY = {
+    "Dallas":         "DFW",   # KFWD office issues "DALLAS/FORT WORTH" CLI
+    "Houston":        "HOU",   # KHGX office issues "HOUSTON/HOBBY AIRPORT" (Kalshi station)
+    "New York":       "NYC",   # KOKX office issues "CENTRAL PARK NY" (Kalshi station)
+    "Boston":         "BOS",   # KBOX
+    "Minneapolis":    "MSP",   # KMPX
+    "Los Angeles":    "LAX",   # KLOX
+    "Phoenix":        "PHX",   # KPSR
+    "DC":             "DCA",   # KLWX
+    "Las Vegas":      "LAS",   # KVEF
+    "Seattle":        "SEA",   # KSEW
+    "San Antonio":    "SAT",   # KEWX
+    "San Francisco":  "SFO",   # KMTR
+    "Oklahoma City":  "OKC",   # KOUN
+}
+
+
+def get_nws_cli_high_f(city_name: str, target_date: date) -> float | None:
+    """
+    Fetch the official NWS Climatological Daily Report ("CLI" product) max
+    temperature for `city_name` on `target_date`. This is the same data Kalshi
+    uses to settle weather contracts, so it reconciles cleanly with WIN/LOSS.
+
+    Returns the observed high in °F, or None if:
+    - The city is not in NWS_CLI_LOCATION_BY_CITY (rain cities)
+    - No matching CLI product was found (more than ~7 days old, or not yet issued)
+    - The CLI text could not be parsed
+
+    The CLI products are short-lived in the NWS API (typically 7-14 day window).
+    For older trades, fall back to Open-Meteo archive.
+    """
+    location = NWS_CLI_LOCATION_BY_CITY.get(city_name)
+    if not location:
+        return None
+
+    import re
+    try:
+        # Pull recent CLIs for the office. The final CLI for date D is issued
+        # the morning of D+1; the preliminary "PM update" of D may also be
+        # present. We want whichever covers our target_date.
+        r = requests.get(f"{NWS_API_BASE}/products",
+                         params={"location": location, "type": "CLI", "limit": 50},
+                         headers=NWS_HEADERS, timeout=15)
+        if not r.ok:
+            return None
+        items = r.json().get("@graph", []) or []
+        # Match the target date in the CLI summary line. NWS formats it like
+        # "FOR JUNE 22 2026" (uppercase month name, no leading zero on day).
+        target_str = target_date.strftime("%B %d %Y").upper()
+        target_str_no_leading = target_str.replace(" 0", " ", 1) if " 0" in target_str else target_str
+
+        for item in items:
+            pid = item.get("id")
+            if not pid:
+                continue
+            r2 = requests.get(f"{NWS_API_BASE}/products/{pid}",
+                              headers=NWS_HEADERS, timeout=10)
+            if not r2.ok:
+                continue
+            text = r2.json().get("productText", "") or ""
+            # The product must summarize OUR target date
+            if target_str not in text and target_str_no_leading not in text:
+                continue
+            # Find the "TODAY" block's MAXIMUM line. CLI products may have
+            # later sections like "YESTERDAY" but the relevant block here is
+            # the one matched by the date in CLIMATE SUMMARY header above.
+            in_today = False
+            for line in text.split("\n"):
+                upper = line.upper()
+                if not in_today and " TODAY" in line and "TEMPERATURE" not in upper:
+                    in_today = True
+                    continue
+                if in_today:
+                    if "MAXIMUM" in upper:
+                        m = re.search(r"MAXIMUM\s+(-?\d+)", line)
+                        if m:
+                            return float(m.group(1))
+                    # Stop at the next block boundary
+                    if "MINIMUM" in upper or "PRECIPITATION" in upper:
+                        break
+        return None
+    except Exception as e:
+        print(f"  NWS CLI fetch error for {city_name} {target_date}: {e}")
+        return None
+
+
 def _fetch_ensemble(lat: float, lon: float, target_date: date, tz: str, model: str) -> list[float]:
     """Internal: fetch a single model's ensemble daily max temps for one date."""
     params = {
