@@ -105,6 +105,12 @@ V2_FORECAST_SIGMA_BY_CITY = {
     "Minneapolis":   3.5,
     "Oklahoma City": 3.5,
     "DC":            3.5,
+    # Added 2026-06-28 after the bucket-width fix surfaced additional structural
+    # forecast-error cities. LV had 2 losses ($-332) in 4 days at σ=2.5°F; SEA
+    # had 1 loss at σ=2.5°F. Both showed the same edge-integer pattern and
+    # forecast-vs-actual gaps of 4-5°F in recent trades.
+    "Las Vegas":     3.5,
+    "Seattle":       3.5,
 }
 
 # --- Probability calibration ---

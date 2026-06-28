@@ -61,6 +61,15 @@ def _estimate_v2(temps, direction, threshold_f, low_f, high_f, city_name=None):
     σ defaults to V2_FORECAST_SIGMA_F (2.5°F) but is overridden for specific cities
     via V2_FORECAST_SIGMA_BY_CITY when forecast accuracy is known to be worse
     (e.g., NYC's Central Park microclimate problem).
+
+    BUCKET WIDTH SEMANTICS (fixed 2026-06-28):
+    Kalshi buckets like B79.5 have floor_strike=79, cap_strike=80 and settle YES
+    when the NWS Daily Climate Report reports an integer of EITHER 79 or 80.
+    market_parser extracts low_f=79, high_f=80 from the title. But the bucket
+    covers TWO discrete integer values, not a 1°F continuous range. To translate
+    to continuous-probability mass, we widen by 0.5°F on each side: [78.5, 80.5].
+    Pre-fix, the bot computed Φ(80) - Φ(79), which systematically underestimated
+    bucket probability by ~2x and caused 8/8 boundary-integer losses in late June.
     No post-calibration shrinkage; the distribution-fit output is the final our_prob.
     """
     if not temps:
@@ -68,11 +77,13 @@ def _estimate_v2(temps, direction, threshold_f, low_f, high_f, city_name=None):
     mean = sum(temps) / len(temps)
     sigma = V2_FORECAST_SIGMA_BY_CITY.get(city_name, V2_FORECAST_SIGMA_F)
     if direction == "above":
-        return norm_probability_above(mean, threshold_f, sigma=sigma)
+        # NWS integer ≥ threshold; widen by 0.5°F to align to integer reporting
+        return norm_probability_above(mean, threshold_f - 0.5, sigma=sigma)
     elif direction == "below":
-        return norm_probability_below(mean, threshold_f, sigma=sigma)
+        return norm_probability_below(mean, threshold_f + 0.5, sigma=sigma)
     elif direction == "bucket" and low_f is not None and high_f is not None:
-        return norm_probability_between(mean, low_f, high_f, sigma=sigma)
+        # Bucket covers integers {low_f, high_f} → widen interval by 0.5°F on each side
+        return norm_probability_between(mean, low_f - 0.5, high_f + 0.5, sigma=sigma)
     return None
 
 
